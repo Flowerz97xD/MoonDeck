@@ -26,7 +26,7 @@ Taken on Linux (COSMIC); the Windows version looks the same.
 <td><img src="docs/capturas/pastel.jpg" alt="Pastel lavender"></td>
 </tr>
 <tr>
-<td><img src="docs/capturas/tron.jpg" alt="Dark theme with neon borders"></td>
+<td><img src="docs/capturas/tron.jpg" alt="Tron"></td>
 <td><img src="docs/capturas/settings.jpg" alt="Settings window"></td>
 </tr>
 </table>

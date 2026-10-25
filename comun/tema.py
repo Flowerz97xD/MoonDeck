@@ -106,7 +106,7 @@ PREDEFINIDOS = {
         "global": dict(POR_DEFECTO["global"], acento="#4df3ff", texto="#e8fdff", texto_sec="#6fa9b3"),
         "widgets": dict(POR_DEFECTO["widgets"], fondo="#00080c", opacidad=0.88, borde="#4df3ff", borde_opacidad=0.9,
                         borde_grosor=1.0, radio=2, neon=True),
-        "panel": dict(POR_DEFECTO["panel"], fondo="#00121a", opacidad=0.7, borde="#ff9a3c", borde_opacidad=0.85,
+        "panel": dict(POR_DEFECTO["panel"], fondo="#00121a", opacidad=0.7, borde="#4df3ff", borde_opacidad=0.85,
                       borde_grosor=1.0, radio=2, neon=True, panel_fondo="#000204", panel_opacidad=0.85),
     },
     "Vaporwave": {

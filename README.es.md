@@ -30,7 +30,7 @@ Hechas en Linux (COSMIC); la versión de Windows se ve igual.
 <td><img src="docs/capturas/pastel.jpg" alt="Pastel lavanda"></td>
 </tr>
 <tr>
-<td><img src="docs/capturas/tron.jpg" alt="Tema oscuro con bordes de neón"></td>
+<td><img src="docs/capturas/tron.jpg" alt="Tron"></td>
 <td><img src="docs/capturas/settings.jpg" alt="Ventana de configuración"></td>
 </tr>
 </table>
