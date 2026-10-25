@@ -106,6 +106,7 @@ try:
     from sensores import Sampler
     from velocidad import TestVelocidad
     import velocimetro
+    import esferas
 except Exception:
     _excepthook(*sys.exc_info())
     sys.exit(1)
@@ -295,6 +296,76 @@ def px_que_quepa(widget, cr, texto, ancho, alto, peso=Pango.Weight.LIGHT):
     return px
 
 
+class LienzoCairo:
+    """Las operaciones de dibujo que usan los relojes y velocímetros comunes (esferas.py)."""
+
+    PESOS = {"fino": Pango.Weight.LIGHT, "normal": Pango.Weight.NORMAL, "negrita": Pango.Weight.BOLD}
+
+    def __init__(self, widget, cr):
+        self.widget, self.cr = widget, cr
+
+    def _color(self, c):
+        (self.cr.set_source_rgba if len(c) == 4 else self.cr.set_source_rgb)(*c)
+
+    def rect(self, x, y, w, h, radio, color):
+        if radio:
+            rect_redondeado(self.cr, x, y, w, h, radio)
+        else:
+            self.cr.rectangle(x, y, w, h)
+        self._color(color)
+        self.cr.fill()
+
+    def circulo(self, cx, cy, r, color):
+        self.cr.new_path()
+        self.cr.arc(cx, cy, r, 0, 2 * math.pi)
+        self._color(color)
+        self.cr.fill()
+
+    def arco(self, cx, cy, r, a0, a1, grosor, color, redondo=False):
+        cr = self.cr
+        cr.new_path()
+        cr.arc(cx, cy, r, a0, a1)
+        cr.set_line_width(grosor)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND if redondo else cairo.LINE_CAP_BUTT)
+        self._color(color)
+        cr.stroke()
+
+    def linea(self, x0, y0, x1, y1, grosor, color, redondo=False):
+        cr = self.cr
+        cr.new_path()
+        cr.move_to(x0, y0)
+        cr.line_to(x1, y1)
+        cr.set_line_width(grosor)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND if redondo else cairo.LINE_CAP_BUTT)
+        self._color(color)
+        cr.stroke()
+
+    def poligono(self, puntos, color):
+        cr = self.cr
+        cr.new_path()
+        cr.move_to(*puntos[0])
+        for p in puntos[1:]:
+            cr.line_to(*p)
+        cr.close_path()
+        self._color(color)
+        cr.fill()
+
+    def medir(self, texto, px, peso="normal"):
+        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso]).get_pixel_size()
+
+    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
+        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso])
+        lw, lh = lay.get_pixel_size()
+        self._color(color)
+        self.cr.move_to(x + (w - lw) * h_al, y + (h - lh) * v_al)
+        PangoCairo.show_layout(self.cr, lay)
+
+
+def paleta():
+    """Colores del tema en uso para los dibujos comunes."""
+    return {"texto": BLANCO, "gris": GRIS, "tenue": TENUE, **COLORES}
+
+
 # Las áreas de dibujo tienen su propia ventana de GDK: sin estos eventos, los clics
 # sobre ellas no llegarían a la tarjeta (menú, arrastrar).
 EVENTOS = Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.POINTER_MOTION_MASK
@@ -426,6 +497,7 @@ class Velocimetro(Dibujo):
         self.fase = ""          # rótulo de encima
         self.color = "azul"
         self.progreso = None    # 0-1 mientras mide (arco fino exterior)
+        self.estilo = "deportivo"
         self._animando = None
         self.connect("draw", self.dibujar)
 
@@ -449,73 +521,10 @@ class Velocimetro(Dibujo):
         return self._animando is not None
 
     def dibujar(self, _w, cr):
-        vm = velocimetro
-        w, h = self.get_allocated_width(), self.get_allocated_height()
-        cx, cy, r = vm.geometria(w, h)
-        grueso = max(6.0, r * 0.13)
-        r_med = r - grueso / 2 - 4
-        frac = vm.fraccion(self.valor, self.tope)
-        color = COLORES.get(self.color, COLORES["azul"])
-        n = vm.SEGMENTOS
-        paso = math.radians(vm.ARCO) / n
-        cr.set_line_cap(cairo.LINE_CAP_BUTT)
-        cr.set_line_width(grueso)
-        for i in range(n):
-            a0 = vm.angulo(i / n) + paso * 0.14
-            a1 = vm.angulo((i + 1) / n) - paso * 0.14
-            cr.new_path()
-            cr.arc(cx, cy, r_med, a0, a1)
-            if (i + 0.5) / n <= frac:
-                t = i / max(1, n - 1)
-                cr.set_source_rgba(*vm.mezcla(temas.mezcla(color, (0, 0, 0), 0.35), color, min(1, t * 1.6)), 1)
-            else:
-                cr.set_source_rgba(*TENUE, 0.08)
-            cr.stroke()
-        # Brillo en la punta, como la aguja encendida.
-        if frac > 0:
-            a = vm.angulo(frac)
-            cr.new_path()
-            cr.arc(cx, cy, r_med, a - paso * 0.9, a)
-            cr.set_source_rgba(*color, 0.35)
-            cr.set_line_width(grueso * 1.9)
-            cr.stroke()
-        # Progreso de la fase: arco fino por fuera.
-        if self.progreso is not None:
-            cr.set_line_width(2)
-            cr.set_line_cap(cairo.LINE_CAP_ROUND)
-            cr.new_path()
-            cr.arc(cx, cy, r - 1, vm.angulo(0), vm.angulo(1))
-            cr.set_source_rgba(*TENUE, 0.1)
-            cr.stroke()
-            if self.progreso > 0:
-                cr.new_path()
-                cr.arc(cx, cy, r - 1, vm.angulo(0), vm.angulo(min(1, self.progreso)))
-                cr.set_source_rgba(*color, 0.8)
-                cr.stroke()
-        # Escala rotulada por dentro del arco (si hay sitio).
-        r_txt = r_med - grueso / 2 - max(9, r * 0.1)
-        if r >= 70:
-            px = max(8, min(12, r * 0.1))
-            for v in vm.marcas(self.tope):
-                a = vm.angulo(vm.fraccion(v, self.tope))
-                lay = capa_texto(self, cr, vm.fmt_marca(v), px)
-                lw, lh = lay.get_pixel_size()
-                pintar_texto(cr, lay, cx + math.cos(a) * r_txt - lw / 2, cy + math.sin(a) * r_txt - lh / 2,
-                             lw, lh, GRIS)
-        # Cifra, unidad y fase.
-        hueco = r_txt * 1.25 if r >= 70 else r_med * 1.3
-        px = px_que_quepa(self, cr, self.texto, hueco, r * 0.3)
-        lay = capa_texto(self, cr, self.texto, px, Pango.Weight.LIGHT)
-        lw, lh = lay.get_pixel_size()
-        pintar_texto(cr, lay, cx - lw / 2, cy - lh / 2, lw, lh, BLANCO)
-        chico = max(9, r * 0.13)
-        lay = capa_texto(self, cr, self.unidad, chico)
-        uw, uh = lay.get_pixel_size()
-        pintar_texto(cr, lay, cx - uw / 2, cy + lh * 0.42, uw, uh, GRIS)
-        if self.fase and r >= 60:  # en pequeño no cabe sin pisar el arco
-            lay = capa_texto(self, cr, self.fase, chico, Pango.Weight.BOLD)
-            fw, fh = lay.get_pixel_size()
-            pintar_texto(cr, lay, cx - fw / 2, cy - lh * 0.45 - fh, fw, fh, color)
+        e = {"valor": self.valor, "tope": self.tope, "texto": self.texto, "fase": self.fase,
+             "color": self.color, "progreso": self.progreso, "unidad": self.unidad}
+        esferas.velocimetro(LienzoCairo(self, cr), paleta(), self.get_allocated_width(),
+                            self.get_allocated_height(), e, self.estilo)
 
 
 class BarrasNucleos(Dibujo):
@@ -1293,7 +1302,7 @@ CIUDADES = (  # reloj mundial: (nombre, zona horaria)
     ("Seúl", "Asia/Seoul"), ("Tokio", "Asia/Tokyo"), ("Sídney", "Australia/Sydney"), ("UTC", "UTC"),
 )
 ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
-                 ("minimal", "Minimalista"), ("mundial", "Reloj mundial"))
+                 ("minimal", "Minimalista"), ("mundial", "Reloj mundial")) + esferas.ESTILOS_NUEVOS
 RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
@@ -1302,7 +1311,8 @@ RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
 class RelojVista(Dibujo):
     """Reloj dibujado que se escala al tamaño que tenga (celda del panel o widget).
 
-    Estilos: digital, analógico, minimalista y mundial (varias ciudades).
+    Estilos: digital, analógico, minimalista y mundial (varias ciudades), y los de
+    esferas.py (anillos, binario, Nixie, flip y LED).
     """
 
     def __init__(self, opciones):
@@ -1316,7 +1326,7 @@ class RelojVista(Dibujo):
     def ajustar_minimo(self):
         o = self.opciones
         minimos = {"digital": 130, "analogico": 210, "minimal": 110,
-                   "mundial": 44 * max(1, len(o["zonas"]))}
+                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS}
         alto = minimos.get(o["estilo"], 96)
         self.poner_alto(int(alto * 0.55), alto)
         self.queue_draw()
@@ -1326,6 +1336,10 @@ class RelojVista(Dibujo):
 
     def dibujar(self, _w, cr):
         ahora = datetime.datetime.now()
+        if self.opciones["estilo"] in esferas.ALTOS:
+            esferas.reloj(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height(),
+                          ahora, self.opciones, fecha_larga(ahora.date()), self.opciones["estilo"])
+            return
         {"analogico": self.analogico, "minimal": self.minimal,
          "mundial": self.mundial}.get(self.opciones["estilo"], self.digital)(cr, ahora)
 
@@ -3071,6 +3085,14 @@ class VentanaConfig(Gtk.Window):
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
 
+        lista = self.grupo(cont, "Test de velocidad")
+        estilo = Gtk.ComboBoxText()
+        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+            estilo.append(clave, _(nombre))
+        estilo.set_active_id(app.vel_reloj.estilo)
+        estilo.connect("changed", lambda w: app.cambiar_velocimetro(w.get_active_id()))
+        self.fila(lista, "Estilo del velocímetro", estilo)
+
         lista = self.grupo(cont, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
@@ -3560,6 +3582,7 @@ class Monitor:
         # Test de velocidad
         c = self.tarjeta("velocidad", "Test de velocidad")
         self.vel_reloj = c.add_w(Velocimetro(), expand=True)
+        self.vel_reloj.estilo = self.config.get("velocimetro", "deportivo")
         self.vel_resto = c.add_w(etiqueta(), prescindible=2)
         self.vel_resto.set_xalign(0.5)
         self.vel_estado = c.add_w(etiqueta("", "dim", envolver=True), prescindible=1)
@@ -3910,6 +3933,7 @@ class Monitor:
 
     @staticmethod
     def item(menu, texto, fn=None, marcado=None):
+        texto = _(texto)  # los nombres que no son textos de la app (pantallas, GPU…) se quedan igual
         if marcado is None:
             it = Gtk.MenuItem(label=texto)
         else:
@@ -3979,6 +4003,11 @@ class Monitor:
             menu.append(Gtk.SeparatorMenuItem())
         if tarjeta.clave == "discord":
             self.menu_discord(menu)
+        if tarjeta.clave == "velocidad":
+            sub = self.submenu(menu, "Estilo del velocímetro")
+            for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+                self.item(sub, nombre, lambda c=clave: self.cambiar_velocimetro(c), self.vel_reloj.estilo == clave)
+            menu.append(Gtk.SeparatorMenuItem())
         if tarjeta.clave == "tiempo":
             self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
             self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
@@ -4514,6 +4543,12 @@ class Monitor:
             poner_texto(self.vel_estado, _("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
                         _("Mide ping, bajada y subida (unos 15 s)."))
         return False
+
+    def cambiar_velocimetro(self, estilo):
+        self.config["velocimetro"] = estilo
+        self.vel_reloj.estilo = estilo
+        self.vel_reloj.queue_draw()
+        self.guardar_config()
 
     @staticmethod
     def fmt_cifra(v):

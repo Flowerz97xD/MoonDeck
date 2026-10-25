@@ -123,7 +123,8 @@ CLOCK, CALENDAR, AUDIO AND SPEED
 --------------------------------
   Clock ............ adapts to the size of the widget or the cell.
                      Right-click it: "Clock type" (Digital, Analog,
-                     Minimalist or World clock), "24-hour format",
+                     Minimalist, World clock, Rings, Binary, Nixie tubes, Flip
+                     cards or 7-segment LED), "24-hour format",
                      "Show seconds" and "Cities" (up to 8).
   Calendar ......... the month with today highlighted; arrows to change the
                      month and click the month name to go back to today.
@@ -133,9 +134,10 @@ CLOCK, CALENDAR, AUDIO AND SPEED
                      default microphone.
   Speed test ....... a speedometer like a car's; "Start test" button: measures
                      ping, download and upload in about 15 s against
-                     Cloudflare's servers. It uses data like any speed test (up
-                     to ~500 MB on very fast connections). The last result is
-                     saved.
+                     Cloudflare's servers. Right-click > "Speedometer style":
+                     Sporty, Needle or Ring. It uses data like any speed test
+                     (up to ~500 MB on very fast connections). The last result
+                     is saved.
 
 
 MEDIA

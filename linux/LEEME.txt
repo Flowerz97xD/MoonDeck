@@ -126,7 +126,8 @@ RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
 ------------------------------------
   Reloj ............ se adapta al tamano del widget o de la celda. Clic
                      derecho sobre el: "Tipo de reloj" (Digital, Analogico,
-                     Minimalista o Reloj mundial), "Formato 24 horas",
+                     Minimalista, Reloj mundial, Anillos, Binario, Tubos Nixie,
+                     Tarjetas (flip) o LED de 7 segmentos), "Formato 24 horas",
                      "Mostrar segundos" y "Ciudades" (hasta 8).
   Calendario ....... el mes con hoy marcado; flechas para cambiar de mes y
                      clic en el nombre del mes para volver a hoy. Clic derecho >
@@ -137,9 +138,10 @@ RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
                      silenciar el microfono predeterminado.
   Test de velocidad  un velocimetro como el de un coche; boton "Iniciar test":
                      mide ping, bajada y subida en unos 15 s contra los
-                     servidores de Cloudflare. Gasta datos como cualquier test
-                     (hasta ~500 MB en conexiones muy rapidas). Se guarda el
-                     ultimo resultado.
+                     servidores de Cloudflare. Clic derecho > "Estilo del
+                     velocimetro": Deportivo, Aguja o Anillo. Gasta datos como
+                     cualquier test (hasta ~500 MB en conexiones muy rapidas).
+                     Se guarda el ultimo resultado.
 
 
 MULTIMEDIA

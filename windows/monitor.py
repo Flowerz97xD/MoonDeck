@@ -76,7 +76,7 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
 try:
     from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QGuiApplication,
-                               QLinearGradient, QPainter, QPainterPath, QPen, QPixmap)
+                               QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
                                    QFileDialog, QFontComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
@@ -87,6 +87,7 @@ try:
     from multimedia import Dispositivos, Mezclador, Reproductores
     from velocidad import TestVelocidad
     import velocimetro
+    import esferas
     from sensores import ES_WINDOWS, Sampler
     from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
@@ -480,6 +481,76 @@ def recortar(label, texto, ancho):
     label.setToolTip(texto if label.text() != texto else "")
 
 
+def color_qt(c):
+    return QColor.fromRgbF(*c[:3], c[3] if len(c) == 4 else 1.0)
+
+
+def rgb(c):
+    return (c.redF(), c.greenF(), c.blueF())
+
+
+def paleta():
+    """Colores del tema en uso para los dibujos comunes (esferas.py)."""
+    return {"texto": rgb(QColor(C_TEXTO)), "gris": rgb(QColor(C_SEC)), "tenue": tuple(v / 255 for v in TENUE),
+            **{k: rgb(v) for k, v in COLORES.items()}}
+
+
+class LienzoQt:
+    """Las operaciones de dibujo que usan los relojes y velocímetros comunes (esferas.py)."""
+
+    PESOS = {"fino": QFont.Light, "normal": QFont.Normal, "negrita": QFont.Bold}
+
+    def __init__(self, widget, p):
+        self.widget, self.p = widget, p
+        self.fuentes = {}
+
+    def rect(self, x, y, w, h, radio, color):
+        self.p.setPen(Qt.NoPen)
+        self.p.setBrush(color_qt(color))
+        self.p.drawRoundedRect(QRectF(x, y, w, h), radio, radio)
+
+    def circulo(self, cx, cy, r, color):
+        self.p.setPen(Qt.NoPen)
+        self.p.setBrush(color_qt(color))
+        self.p.drawEllipse(QPointF(cx, cy), r, r)
+
+    def arco(self, cx, cy, r, a0, a1, grosor, color, redondo=False):
+        self.p.setBrush(Qt.NoBrush)
+        self.p.setPen(QPen(color_qt(color), grosor, Qt.SolidLine, Qt.RoundCap if redondo else Qt.FlatCap))
+        # Qt cuenta los ángulos en 1/16 de grado y al revés (contra las agujas del reloj).
+        self.p.drawArc(QRectF(cx - r, cy - r, 2 * r, 2 * r), round(-math.degrees(a0) * 16),
+                       round(-math.degrees(a1 - a0) * 16))
+
+    def linea(self, x0, y0, x1, y1, grosor, color, redondo=False):
+        self.p.setPen(QPen(color_qt(color), grosor, Qt.SolidLine, Qt.RoundCap if redondo else Qt.FlatCap))
+        self.p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+
+    def poligono(self, puntos, color):
+        self.p.setPen(Qt.NoPen)
+        self.p.setBrush(color_qt(color))
+        self.p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in puntos]))
+
+    def _fuente(self, px, peso):
+        clave = (round(px), peso)
+        if clave not in self.fuentes:
+            f = QFont(self.widget.font())
+            f.setPixelSize(max(1, round(px)))
+            f.setWeight(self.PESOS[peso])
+            self.fuentes[clave] = (f, QFontMetricsF(f))
+        return self.fuentes[clave]
+
+    def medir(self, texto, px, peso="normal"):
+        _f, fm = self._fuente(px, peso)
+        return fm.horizontalAdvance(texto), fm.height()
+
+    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
+        f, fm = self._fuente(px, peso)
+        tw, th = fm.horizontalAdvance(texto), fm.height()
+        self.p.setFont(f)
+        self.p.setPen(color_qt(color))
+        self.p.drawText(QRectF(x + (w - tw) * h_al, y + (h - th) * v_al, tw, th), Qt.AlignCenter, texto)
+
+
 class BarraProgreso(QWidget):
     """Progreso de la canción o el vídeo: clic o arrastrar para ir a otro punto."""
 
@@ -592,6 +663,7 @@ class Velocimetro(QWidget):
         self.fase = ""          # rótulo de encima
         self.color = "azul"
         self.progreso = None    # 0-1 mientras mide (arco fino exterior)
+        self.estilo = "deportivo"
         self.animacion = QTimer(self)
         self.animacion.setInterval(16)
         self.animacion.timeout.connect(self._animar)
@@ -615,79 +687,12 @@ class Velocimetro(QWidget):
             self.animacion.stop()
         self.update()
 
-    @staticmethod
-    def _arco(p, cx, cy, r, a0, a1):
-        """Arco entre dos ángulos en radianes (en el sentido de las agujas, eje y hacia abajo)."""
-        caja = QRectF(cx - r, cy - r, 2 * r, 2 * r)
-        p.drawArc(caja, round(-math.degrees(a0) * 16), round(-math.degrees(a1 - a0) * 16))
-
     def paintEvent(self, _e):
-        vm = velocimetro
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-        cx, cy, r = vm.geometria(w, h)
-        grueso = max(6.0, r * 0.13)
-        r_med = r - grueso / 2 - 4
-        frac = vm.fraccion(self.valor, self.tope)
-        color = COLORES.get(self.color, COLORES["azul"])
-        oscuro = mezclar(color, QColor(0, 0, 0), 0.35)
-        n = vm.SEGMENTOS
-        paso = math.radians(vm.ARCO) / n
-        for i in range(n):
-            if (i + 0.5) / n <= frac:
-                c = mezclar(oscuro, color, min(1, i / max(1, n - 1) * 1.6))
-            else:
-                c = tenue(20)
-            p.setPen(QPen(c, grueso, Qt.SolidLine, Qt.FlatCap))
-            self._arco(p, cx, cy, r_med, vm.angulo(i / n) + paso * 0.14, vm.angulo((i + 1) / n) - paso * 0.14)
-        # Brillo en la punta, como la aguja encendida.
-        if frac > 0:
-            brillo = QColor(color)
-            brillo.setAlpha(90)
-            p.setPen(QPen(brillo, grueso * 1.9, Qt.SolidLine, Qt.FlatCap))
-            a = vm.angulo(frac)
-            self._arco(p, cx, cy, r_med, a - paso * 0.9, a)
-        # Progreso de la fase: arco fino por fuera.
-        if self.progreso is not None:
-            p.setPen(QPen(tenue(25), 2, Qt.SolidLine, Qt.RoundCap))
-            self._arco(p, cx, cy, r - 1, vm.angulo(0), vm.angulo(1))
-            if self.progreso > 0:
-                c = QColor(color)
-                c.setAlpha(205)
-                p.setPen(QPen(c, 2, Qt.SolidLine, Qt.RoundCap))
-                self._arco(p, cx, cy, r - 1, vm.angulo(0), vm.angulo(min(1, self.progreso)))
-        # Escala rotulada por dentro del arco (si hay sitio).
-        r_txt = r_med - grueso / 2 - max(9, r * 0.1)
-        if r >= 70:
-            f = QFont(self.font())
-            f.setPixelSize(round(max(8, min(12, r * 0.1)) * ESCALA))
-            p.setFont(f)
-            p.setPen(QColor(C_SEC))
-            for v in vm.marcas(self.tope):
-                a = vm.angulo(vm.fraccion(v, self.tope))
-                x, y = cx + math.cos(a) * r_txt, cy + math.sin(a) * r_txt
-                p.drawText(QRectF(x - 20, y - 10, 40, 20), Qt.AlignCenter, vm.fmt_marca(v))
-        # Cifra, unidad y fase.
-        hueco = r_txt * 1.25 if r >= 70 else r_med * 1.3
-        f = fuente_que_quepa(self.texto, hueco, r * 0.42, QFont.Light, self.font())
-        p.setFont(f)
-        p.setPen(QColor(C_TEXTO))
-        alto_cifra = QFontMetricsF(f).height()
-        p.drawText(QRectF(cx - hueco, cy - alto_cifra / 2, 2 * hueco, alto_cifra), Qt.AlignCenter, self.texto)
-        chico = QFont(self.font())
-        chico.setPixelSize(round(max(9, r * 0.13)))
-        alto_chico = QFontMetricsF(chico).height()
-        p.setFont(chico)
-        p.setPen(QColor(C_SEC))
-        p.drawText(QRectF(cx - r, cy + alto_cifra * 0.38, 2 * r, alto_chico), Qt.AlignHCenter | Qt.AlignTop,
-                   self.unidad)
-        if self.fase and r >= 60:  # en pequeño no cabe sin pisar el arco
-            chico.setBold(True)
-            p.setFont(chico)
-            p.setPen(color)
-            p.drawText(QRectF(cx - r, cy - alto_cifra * 0.42 - alto_chico, 2 * r, alto_chico),
-                       Qt.AlignHCenter | Qt.AlignBottom, self.fase)
+        e = {"valor": self.valor, "tope": self.tope, "texto": self.texto, "fase": self.fase,
+             "color": self.color, "progreso": self.progreso, "unidad": self.unidad}
+        esferas.velocimetro(LienzoQt(self, p), paleta(), self.width(), self.height(), e, self.estilo)
 
 
 class FilaReproductor(QWidget):
@@ -877,7 +882,7 @@ CIUDADES = (  # reloj mundial: (nombre, zona horaria)
     ("Seúl", "Asia/Seoul"), ("Tokio", "Asia/Tokyo"), ("Sídney", "Australia/Sydney"), ("UTC", "UTC"),
 )
 ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
-                 ("minimal", "Minimalista"), ("mundial", "Reloj mundial"))
+                 ("minimal", "Minimalista"), ("mundial", "Reloj mundial")) + esferas.ESTILOS_NUEVOS
 RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
@@ -908,7 +913,7 @@ class RelojVista(QWidget):
     def ajustar_minimo(self):
         o = self.opciones
         minimos = {"digital": 96, "analogico": 210, "minimal": 104,
-                   "mundial": 44 * max(1, len(o["zonas"]))}
+                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS}
         self._alto = minimos.get(o["estilo"], 96)
         self.setMinimumHeight(int(self._alto * 0.55))
         self.updateGeometry()
@@ -926,6 +931,10 @@ class RelojVista(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         ahora = datetime.datetime.now()
+        if self.opciones["estilo"] in esferas.ALTOS:
+            esferas.reloj(LienzoQt(self, p), paleta(), self.width(), self.height(), ahora, self.opciones,
+                          fecha_larga(ahora.date()), self.opciones["estilo"])
+            return
         dibujar = {"analogico": self.analogico, "minimal": self.minimal,
                    "mundial": self.mundial}.get(self.opciones["estilo"], self.digital)
         dibujar(p, ahora)
@@ -3033,6 +3042,14 @@ class VentanaConfig(QWidget):
             ch.toggled.connect(lambda v, c=clave: app.cambiar_reloj(**{c: v}))
             self.fila(lista, texto, ch)
 
+        lista = self.grupo(caja, "Test de velocidad")
+        estilo = QComboBox()
+        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+            estilo.addItem(_(nombre), clave)
+        estilo.setCurrentIndex(max(0, estilo.findData(app.vel_reloj.estilo)))
+        estilo.currentIndexChanged.connect(lambda i: app.cambiar_velocimetro(estilo.itemData(i)))
+        self.fila(lista, "Estilo del velocímetro", estilo)
+
         lista = self.grupo(caja, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
@@ -3604,6 +3621,7 @@ class Monitor:
         # Test de velocidad
         c = self.tarjeta("velocidad", "Test de velocidad")
         self.vel_reloj = c.add(Velocimetro())
+        self.vel_reloj.estilo = self.config.get("velocimetro", "deportivo")
         self.vel_resto = c.add(etiqueta(), prescindible=2)
         self.vel_resto.setAlignment(Qt.AlignHCenter)
         self.vel_estado = c.add(etiqueta("", "dim"), prescindible=1)
@@ -3950,6 +3968,13 @@ class Monitor:
                 a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
                 a.setCheckable(True)
                 a.setChecked(self.primer_dia() == dia)
+            menu.addSeparator()
+        if tarjeta.clave == "velocidad":
+            sub = menu.addMenu(_("Estilo del velocímetro"))
+            for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+                a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.cambiar_velocimetro(c))
+                a.setCheckable(True)
+                a.setChecked(self.vel_reloj.estilo == clave)
             menu.addSeparator()
         if tarjeta.clave == "tiempo":
             menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
@@ -4533,6 +4558,12 @@ class Monitor:
         else:
             self.vel_estado.setText(_("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
                                     _("Mide ping, bajada y subida (unos 15 s)."))
+
+    def cambiar_velocimetro(self, estilo):
+        self.config["velocimetro"] = estilo
+        self.vel_reloj.estilo = estilo
+        self.vel_reloj.update()
+        self.guardar_config()
 
     @staticmethod
     def fmt_cifra(v):

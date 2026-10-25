@@ -16,6 +16,9 @@ import time
 from idioma import _
 
 HOST = "speed.cloudflare.com"
+# Sin presentarse como un navegador, Cloudflare rechaza las descargas de 10 MB o más
+# (responde 429 "Too Many Requests" con un solo byte).
+CABECERAS = {"User-Agent": "Mozilla/5.0 (compatible; MoonDeck)", "Referer": f"https://{HOST}/"}
 
 
 class TestVelocidad:
@@ -32,6 +35,7 @@ class TestVelocidad:
         self.actual = None      # Mbps en directo durante la fase
         self.resultado = None   # {"ping", "bajada", "subida", "fecha"}
         self.parcial = {}       # lo ya medido del test en marcha ("ping", "bajada")
+        self._rechazo = None    # código HTTP si Cloudflare no ha dejado medir
         self.error = None
         self._hilo = None
 
@@ -74,6 +78,7 @@ class TestVelocidad:
 
     def _medir(self, fase, trabajo, duracion, maximo):
         self.fase, self.progreso, self.actual = fase, 0.0, None
+        self._rechazo = None
         total = [0]
         lock = threading.Lock()
         fin = threading.Event()
@@ -85,7 +90,7 @@ class TestVelocidad:
                     fin.set()
 
         inicio = time.perf_counter()
-        hilos = [threading.Thread(target=trabajo, args=(sumar, fin), daemon=True) for _ in range(self.HILOS)]
+        hilos = [threading.Thread(target=trabajo, args=(sumar, fin), daemon=True) for _x in range(self.HILOS)]
         for h in hilos:
             h.start()
         while not fin.is_set():
@@ -101,16 +106,29 @@ class TestVelocidad:
         for h in hilos:
             h.join(timeout=3)
         if total[0] == 0:
-            raise ConnectionError(f"no se pudo medir la {fase}")
+            if self._rechazo:
+                raise ConnectionError(_("Cloudflare no deja medir ahora mismo (respuesta {codigo}); "
+                                        "prueba dentro de un rato.").format(codigo=self._rechazo))
+            raise ConnectionError(_("no se pudo medir la bajada") if fase == "bajada"
+                                  else _("no se pudo medir la subida"))
         return total[0] * 8 / transcurrido / 1e6
 
-    @staticmethod
-    def _trabajo_bajada(sumar, fin):
+    def _trabajo_bajada(self, sumar, fin):
+        tam = 25 * 2**20
         con = http.client.HTTPSConnection(HOST, timeout=10)
         try:
             while not fin.is_set():
-                con.request("GET", f"/__down?bytes={25 * 2**20}")
+                con.request("GET", f"/__down?bytes={tam}", headers=CABECERAS)
                 r = con.getresponse()
+                if r.status != 200:
+                    # Rechazado (p. ej. 429): no cuenta como datos. Se prueba con trozos más pequeños.
+                    r.read()
+                    self._rechazo = r.status
+                    if tam <= 2**20:
+                        return
+                    tam //= 4
+                    time.sleep(0.2)
+                    continue
                 while not fin.is_set():
                     trozo = r.read(64 * 1024)
                     if not trozo:
@@ -127,8 +145,12 @@ class TestVelocidad:
         try:
             while not fin.is_set():
                 con.request("POST", "/__up", body=datos,
-                            headers={"Content-Type": "application/octet-stream"})
-                con.getresponse().read()
+                            headers=dict(CABECERAS, **{"Content-Type": "application/octet-stream"}))
+                r = con.getresponse()
+                r.read()
+                if r.status != 200:
+                    self._rechazo = r.status
+                    return
                 sumar(len(datos))
         except OSError:
             pass
