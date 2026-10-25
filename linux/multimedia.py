@@ -122,6 +122,9 @@ class Reproductores:
                 while len(self.portadas) > self.MAX_PORTADAS:
                     self.portadas.pop(next(iter(self.portadas)))
             puede = props.get("CanControl", True)
+            pista = str(meta.get("mpris:trackid", "") or "")
+            if not GLib.Variant.is_object_path(pista) or pista.endswith("/NoTrack"):
+                pista = ""  # sin pista válida se salta con Seek (relativo) en vez de SetPosition
             lista.append({
                 "id": destino, "app": nombre_app(identidad), "titulo": titulo or _("(sin título)"),
                 "artista": artista, "reproduciendo": estado == "Playing",
@@ -129,6 +132,7 @@ class Reproductores:
                 "anterior": bool(puede and props.get("CanGoPrevious", False)),
                 "siguiente": bool(puede and props.get("CanGoNext", False)),
                 "play_pausa": bool(puede and (props.get("CanPlay", False) or props.get("CanPause", False))),
+                "buscar": bool(puede and props.get("CanSeek", False) and dur > 0), "pista": pista,
             })
         lista.sort(key=lambda x: not x["reproduciendo"])  # lo que suena, primero
         with self.lock:
@@ -168,6 +172,27 @@ class Reproductores:
                 self._llamar(ident, MPRIS + ".Player", metodo)
             except GLib.Error:
                 pass  # la app puede haberse cerrado
+        threading.Thread(target=enviar, daemon=True).start()
+
+    def buscar(self, ident, segundos):
+        """Lleva la canción o el vídeo al segundo indicado."""
+        if not self.ok:
+            return
+        with self.lock:
+            s = next((x for x in self.sesiones if x["id"] == ident), None)
+        if not s or not s["buscar"]:
+            return
+
+        def enviar():
+            try:
+                if s["pista"]:
+                    self._llamar(ident, MPRIS + ".Player", "SetPosition",
+                                 GLib.Variant("(ox)", (s["pista"], int(segundos * 1e6))))
+                else:
+                    self._llamar(ident, MPRIS + ".Player", "Seek",
+                                 GLib.Variant("(x)", (int((segundos - s["pos"]) * 1e6),)))
+            except GLib.Error:
+                pass
         threading.Thread(target=enviar, daemon=True).start()
 
     def close(self):

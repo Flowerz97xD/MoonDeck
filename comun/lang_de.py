@@ -420,4 +420,6 @@ TEXTOS = {
     'Ancho': 'Breite',
     'Alto': 'Höhe',
     'Cambiar Client ID / Secret…': 'Client-ID / Secret ändern…',
+    'Esta app no deja saltar a otro punto': 'Diese App erlaubt kein Springen an eine andere Stelle',
+    'PING': 'PING',
 }

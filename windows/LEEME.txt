@@ -210,11 +210,11 @@ RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
                      todos los microfonos predeterminados de Windows (el de
                      multimedia y el de comunicaciones, que usan Discord,
                      Teams o los juegos, pueden ser distintos).
-  Test de velocidad  boton "Iniciar test": mide ping, bajada y subida en unos
-                     15 s contra los servidores de Cloudflare (los de
-                     speed.cloudflare.com). Gasta datos como cualquier test de
-                     velocidad (hasta ~500 MB en conexiones muy rapidas). Se
-                     guarda el ultimo resultado.
+  Test de velocidad  un velocimetro como el de un coche; boton "Iniciar test":
+                     mide ping, bajada y subida en unos 15 s contra los
+                     servidores de Cloudflare (los de speed.cloudflare.com).
+                     Gasta datos como cualquier test de velocidad (hasta ~500 MB
+                     en conexiones muy rapidas). Se guarda el ultimo resultado.
   Si te sobran widgets, ocultalos en menu > "Widgets visibles".
 
 
@@ -223,7 +223,8 @@ MULTIMEDIA
 Arriba, lo que esta sonando en cada app (Spotify, Chrome, Edge, Firefox,
 Reproductor multimedia...): portada, cancion, artista, progreso y botones
 anterior / pausa / siguiente. Si suenan varias a la vez salen todas (hasta 3),
-y se controla cada una por separado.
+y se controla cada una por separado. Haz clic en la barra de progreso (o
+arrastrala) para saltar a otro punto de la cancion o el video.
 Abajo, el mezclador: volumen general y de cada app con sonido (juego, Discord,
 navegador...), con boton de silencio. Es el mismo volumen que el mezclador de
 Windows.

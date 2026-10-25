@@ -48,6 +48,7 @@ class Reproductores:
         self.sesiones = []     # lista de dicts para la interfaz
         self.portadas = {}     # clave de canción -> bytes de la imagen
         self._objetos = {}     # id -> objeto de sesión WinRT
+        self._inicios = {}     # id -> segundos del principio de la línea de tiempo
         self._cerrar = False
         self.lock = threading.Lock()
         if not ES_WINDOWS:
@@ -84,6 +85,7 @@ class Reproductores:
     async def _actualizar(self):
         lista = []
         objetos = {}
+        inicios = {}
         ahora = datetime.datetime.now(datetime.timezone.utc)
         for i, s in enumerate(self.gestor.get_sessions()):
             app = s.source_app_user_model_id
@@ -98,6 +100,7 @@ class Reproductores:
 
             tl = s.get_timeline_properties()
             dur = (tl.end_time - tl.start_time).total_seconds()
+            inicios[ident] = tl.start_time.total_seconds()
             pos = (tl.position - tl.start_time).total_seconds()
             reproduciendo = estado == self.Estado.PLAYING
             if reproduciendo and dur > 0:
@@ -123,12 +126,14 @@ class Reproductores:
                 "pos": pos, "dur": dur, "portada": portada,
                 "anterior": ctr.is_previous_enabled, "siguiente": ctr.is_next_enabled,
                 "play_pausa": ctr.is_play_pause_toggle_enabled or ctr.is_play_enabled or ctr.is_pause_enabled,
+                "buscar": bool(ctr.is_playback_position_enabled and dur > 0),
             })
         # Lo que está sonando, primero.
         lista.sort(key=lambda x: not x["reproduciendo"])
         with self.lock:
             self.sesiones = lista
             self._objetos = objetos
+            self._inicios = inicios
 
     async def _leer_portada(self, referencia):
         try:
@@ -167,6 +172,24 @@ class Reproductores:
                   "play_pausa": s.try_toggle_play_pause_async}[accion]
         try:
             await metodo()
+        except Exception:  # noqa: BLE001 - la app puede haberse cerrado
+            pass
+
+    def buscar(self, ident, segundos):
+        """Lleva la canción o el vídeo al segundo indicado."""
+        if not self.ok:
+            return
+        asyncio.run_coroutine_threadsafe(self._buscar(ident, segundos), self.loop)
+
+    async def _buscar(self, ident, segundos):
+        with self.lock:
+            s = self._objetos.get(ident)
+            inicio = self._inicios.get(ident, 0.0)
+        if s is None:
+            return
+        try:
+            # En unidades de 100 ns, contando desde el principio de la línea de tiempo.
+            await s.try_change_playback_position_async(int((inicio + segundos) * 10_000_000))
         except Exception:  # noqa: BLE001 - la app puede haberse cerrado
             pass
 

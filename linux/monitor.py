@@ -105,6 +105,7 @@ try:
     from version import REPO, VERSION
     from sensores import Sampler
     from velocidad import TestVelocidad
+    import velocimetro
 except Exception:
     _excepthook(*sys.exc_info())
     sys.exit(1)
@@ -303,6 +304,16 @@ class Dibujo(Gtk.DrawingArea):
     def __init__(self):
         super().__init__()
         self.add_events(EVENTOS)
+        self.altos = None
+
+    def poner_alto(self, minimo, natural=None):
+        """Alto mínimo y natural: si la tarjeta va justa, encoge hasta el mínimo
+        (antes que cortar los textos de debajo)."""
+        self.altos = (minimo, max(minimo, natural or minimo))
+        self.queue_resize()
+
+    def do_get_preferred_height(self):
+        return self.altos or Gtk.DrawingArea.do_get_preferred_height(self)
 
 
 def rect_redondeado(cr, x, y, w, h, r):
@@ -324,7 +335,7 @@ class Grafica(Dibujo):
 
     def __init__(self, series, maximo=100.0, alto=80):
         super().__init__()
-        self.set_size_request(-1, alto)
+        self.poner_alto(28, alto)
         self.maximo = maximo
         self.series = [(COLORES[c], deque([0.0] * HISTORIAL, maxlen=HISTORIAL)) for c in series]
         self.connect("draw", self.dibujar)
@@ -399,13 +410,121 @@ class Barra(Dibujo):
             cr.fill()
 
 
+class Velocimetro(Dibujo):
+    """Test de velocidad como el velocímetro digital de un deportivo: arco de segmentos
+    que se encienden, la cifra en el centro y la fase encima."""
+
+    def __init__(self):
+        super().__init__()
+        self.poner_alto(56, 190)
+        self.set_vexpand(True)
+        self.valor = 0.0        # lo que marca ahora (se anima hacia el objetivo)
+        self.objetivo = 0.0
+        self.tope = 100
+        self.texto = "—"        # la cifra del centro
+        self.unidad = "Mbps"
+        self.fase = ""          # rótulo de encima
+        self.color = "azul"
+        self.progreso = None    # 0-1 mientras mide (arco fino exterior)
+        self._animando = None
+        self.connect("draw", self.dibujar)
+
+    def poner(self, valor, tope, texto, fase, color="azul", progreso=None, unidad="Mbps"):
+        cambia = (texto, fase, color, progreso, tope, unidad) != (self.texto, self.fase, self.color,
+                                                                  self.progreso, self.tope, self.unidad)
+        self.objetivo = valor or 0.0
+        self.tope, self.texto, self.fase, self.color, self.progreso, self.unidad = (
+            tope, texto, fase, color, progreso, unidad)
+        if abs(self.objetivo - self.valor) > self.tope * 1e-4 and not self._animando:
+            self._animando = GLib.timeout_add(16, self._animar)
+        elif cambia:
+            self.queue_draw()
+
+    def _animar(self):
+        self.valor += (self.objetivo - self.valor) * 0.14
+        if abs(self.objetivo - self.valor) <= self.tope * 1e-4:
+            self.valor = self.objetivo
+            self._animando = None
+        self.queue_draw()
+        return self._animando is not None
+
+    def dibujar(self, _w, cr):
+        vm = velocimetro
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        cx, cy, r = vm.geometria(w, h)
+        grueso = max(6.0, r * 0.13)
+        r_med = r - grueso / 2 - 4
+        frac = vm.fraccion(self.valor, self.tope)
+        color = COLORES.get(self.color, COLORES["azul"])
+        n = vm.SEGMENTOS
+        paso = math.radians(vm.ARCO) / n
+        cr.set_line_cap(cairo.LINE_CAP_BUTT)
+        cr.set_line_width(grueso)
+        for i in range(n):
+            a0 = vm.angulo(i / n) + paso * 0.14
+            a1 = vm.angulo((i + 1) / n) - paso * 0.14
+            cr.new_path()
+            cr.arc(cx, cy, r_med, a0, a1)
+            if (i + 0.5) / n <= frac:
+                t = i / max(1, n - 1)
+                cr.set_source_rgba(*vm.mezcla(temas.mezcla(color, (0, 0, 0), 0.35), color, min(1, t * 1.6)), 1)
+            else:
+                cr.set_source_rgba(*TENUE, 0.08)
+            cr.stroke()
+        # Brillo en la punta, como la aguja encendida.
+        if frac > 0:
+            a = vm.angulo(frac)
+            cr.new_path()
+            cr.arc(cx, cy, r_med, a - paso * 0.9, a)
+            cr.set_source_rgba(*color, 0.35)
+            cr.set_line_width(grueso * 1.9)
+            cr.stroke()
+        # Progreso de la fase: arco fino por fuera.
+        if self.progreso is not None:
+            cr.set_line_width(2)
+            cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            cr.new_path()
+            cr.arc(cx, cy, r - 1, vm.angulo(0), vm.angulo(1))
+            cr.set_source_rgba(*TENUE, 0.1)
+            cr.stroke()
+            if self.progreso > 0:
+                cr.new_path()
+                cr.arc(cx, cy, r - 1, vm.angulo(0), vm.angulo(min(1, self.progreso)))
+                cr.set_source_rgba(*color, 0.8)
+                cr.stroke()
+        # Escala rotulada por dentro del arco (si hay sitio).
+        r_txt = r_med - grueso / 2 - max(9, r * 0.1)
+        if r >= 70:
+            px = max(8, min(12, r * 0.1))
+            for v in vm.marcas(self.tope):
+                a = vm.angulo(vm.fraccion(v, self.tope))
+                lay = capa_texto(self, cr, vm.fmt_marca(v), px)
+                lw, lh = lay.get_pixel_size()
+                pintar_texto(cr, lay, cx + math.cos(a) * r_txt - lw / 2, cy + math.sin(a) * r_txt - lh / 2,
+                             lw, lh, GRIS)
+        # Cifra, unidad y fase.
+        hueco = r_txt * 1.25 if r >= 70 else r_med * 1.3
+        px = px_que_quepa(self, cr, self.texto, hueco, r * 0.3)
+        lay = capa_texto(self, cr, self.texto, px, Pango.Weight.LIGHT)
+        lw, lh = lay.get_pixel_size()
+        pintar_texto(cr, lay, cx - lw / 2, cy - lh / 2, lw, lh, BLANCO)
+        chico = max(9, r * 0.13)
+        lay = capa_texto(self, cr, self.unidad, chico)
+        uw, uh = lay.get_pixel_size()
+        pintar_texto(cr, lay, cx - uw / 2, cy + lh * 0.42, uw, uh, GRIS)
+        if self.fase and r >= 60:  # en pequeño no cabe sin pisar el arco
+            lay = capa_texto(self, cr, self.fase, chico, Pango.Weight.BOLD)
+            fw, fh = lay.get_pixel_size()
+            pintar_texto(cr, lay, cx - fw / 2, cy - lh * 0.45 - fh, fw, fh, color)
+
+
 class BarrasNucleos(Dibujo):
     """Barras verticales de uso por núcleo."""
 
     def __init__(self, n):
         super().__init__()
         self.valores = [0.0] * n
-        self.set_size_request(-1, 42)
+        self.poner_alto(16, 42)
         self.connect("draw", self.dibujar)
 
     def set(self, valores):
@@ -496,6 +615,89 @@ class Portada(Dibujo):
             pintar_texto(cr, lay, 0, 0, tam, tam, (*TENUE, 0.35), 0.5)
 
 
+class BarraProgreso(Dibujo):
+    """Progreso de la canción o el vídeo: clic o arrastrar para ir a otro punto."""
+
+    ALTO = 14
+
+    def __init__(self, al_mover, al_soltar):
+        super().__init__()
+        self.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.set_size_request(-1, self.ALTO)
+        self.al_mover, self.al_soltar = al_mover, al_soltar
+        self.valor = 0.0          # 0-1
+        self.puede = False        # la app deja saltar
+        self.encima = False
+        self.arrastre = None      # fracción mientras se arrastra
+        self.connect("draw", self.dibujar)
+        self.connect("button-press-event", self._pulsar)
+        self.connect("motion-notify-event", self._mover)
+        self.connect("button-release-event", self._soltar)
+        self.connect("enter-notify-event", lambda *_a: self._encima(True))
+        self.connect("leave-notify-event", lambda *_a: self._encima(False))
+
+    def set(self, valor, puede):
+        if self.arrastre is None and (valor, puede) != (self.valor, self.puede):
+            self.valor, self.puede = valor, puede
+            self.queue_draw()
+
+    def _frac(self, x):
+        return min(max(x / max(1, self.get_allocated_width()), 0.0), 1.0)
+
+    def _encima(self, si):
+        self.encima = si
+        ventana = self.get_window()
+        if ventana:
+            ventana.set_cursor(Gdk.Cursor.new_from_name(self.get_display(), "pointer")
+                               if si and self.puede else None)
+        self.queue_draw()
+
+    def _pulsar(self, _w, ev):
+        tarjeta = self.get_ancestor(Tarjeta)
+        if ev.button != 1 or not self.puede or (tarjeta and tarjeta.en_edicion()):
+            return False  # el clic derecho (menú) y la edición del panel siguen a la tarjeta
+        self.arrastre = self._frac(ev.x)
+        self.al_mover(self.arrastre)
+        self.queue_draw()
+        return True
+
+    def _mover(self, _w, ev):
+        if self.arrastre is None:
+            return False
+        self.arrastre = self._frac(ev.x)
+        self.al_mover(self.arrastre)
+        self.queue_draw()
+        return True
+
+    def _soltar(self, _w, ev):
+        if self.arrastre is None or ev.button != 1:
+            return False
+        self.valor = self._frac(ev.x)
+        self.arrastre = None
+        self.al_soltar(self.valor)
+        self.queue_draw()
+        return True
+
+    def dibujar(self, _w, cr):
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        activo = self.puede and (self.encima or self.arrastre is not None)
+        grosor = 6 if activo else 4
+        y = (h - grosor) / 2
+        rect_redondeado(cr, 0, y, w, grosor, grosor / 2)
+        cr.set_source_rgba(*TENUE, 0.11)
+        cr.fill()
+        frac = self.valor if self.arrastre is None else self.arrastre
+        if frac * w > 0.5:
+            rect_redondeado(cr, 0, y, max(frac * w, grosor), grosor, grosor / 2)
+            cr.set_source_rgb(*COLORES["verde"])
+            cr.fill()
+        if activo:
+            x = min(max(frac * w, 6), w - 6)
+            cr.arc(x, h / 2, 6, 0, 2 * math.pi)
+            cr.set_source_rgb(*BLANCO)
+            cr.fill()
+
+
 class FilaReproductor(Gtk.Box):
     """Una app con música: portada, título, artista, progreso y controles."""
 
@@ -528,18 +730,38 @@ class FilaReproductor(Gtk.Box):
             b.connect("clicked", lambda _b, a=accion: self.rep.orden(self.ident, a))
             abajo.pack_start(b, False, False, 0)
         self.pack_start(abajo, False, False, 0)
-        self.progreso = Barra(alto=4, color=COLORES["verde"])
+        self.progreso = BarraProgreso(self._previsualizar, self._buscar)
         self.pack_start(self.progreso, False, False, 0)
+        self.dur = 0
+        self.buscado = None  # (segundo, cuándo): hasta que la app informe de la posición nueva
         self.show_all()
+
+    def _previsualizar(self, frac):
+        poner_texto(self.tiempo, f"{fmt_tiempo(frac * self.dur)} / {fmt_tiempo(self.dur)}")
+
+    def _buscar(self, frac):
+        self.buscado = (frac * self.dur, time.monotonic())
+        self.rep.buscar(self.ident, frac * self.dur)
 
     def actualizar(self, d):
         self.ident = d["id"]
+        self.dur = d["dur"]
+        pos = d["pos"]
+        if self.buscado:
+            seg, cuando = self.buscado
+            pasado = time.monotonic() - cuando
+            if abs(pos - seg) < 2.5 or pasado > 3:
+                self.buscado = None
+            else:  # la app aún no ha dicho la posición nueva: no volver atrás un momento
+                pos = min(seg + (pasado if d["reproduciendo"] else 0), d["dur"])
         poner_texto(self.titulo, d["titulo"])
         self.titulo.set_tooltip_text(d["titulo"] if len(d["titulo"]) > 30 else None)
         poner_texto(self.artista, d["artista"] or "—")
         poner_texto(self.app, d["app"])
-        poner_texto(self.tiempo, f"{fmt_tiempo(d['pos'])} / {fmt_tiempo(d['dur'])}" if d["dur"] > 0 else "")
-        self.progreso.set(100 * d["pos"] / d["dur"] if d["dur"] > 0 else 0)
+        if self.progreso.arrastre is None:
+            poner_texto(self.tiempo, f"{fmt_tiempo(pos)} / {fmt_tiempo(d['dur'])}" if d["dur"] > 0 else "")
+        self.progreso.set(pos / d["dur"] if d["dur"] > 0 else 0, d.get("buscar", False))
+        self.progreso.set_tooltip_text(None if d.get("buscar") else _("Esta app no deja saltar a otro punto"))
         self.progreso.set_visible(d["dur"] > 0)
         poner_icono(self.b_play, "media-playback-pause-symbolic" if d["reproduciendo"]
                     else "media-playback-start-symbolic")
@@ -1095,7 +1317,8 @@ class RelojVista(Dibujo):
         o = self.opciones
         minimos = {"digital": 130, "analogico": 210, "minimal": 110,
                    "mundial": 44 * max(1, len(o["zonas"]))}
-        self.set_size_request(-1, minimos.get(o["estilo"], 96))
+        alto = minimos.get(o["estilo"], 96)
+        self.poner_alto(int(alto * 0.55), alto)
         self.queue_draw()
 
     def hora(self, t):
@@ -1245,7 +1468,7 @@ class CalendarioMes(Dibujo):
         super().__init__()
         self.primer_dia = primer_dia  # 0 = lunes, 6 = domingo
         self.ir_a_hoy()
-        self.set_size_request(-1, 165)
+        self.poner_alto(84, 165)
         self.set_vexpand(True)
         self.connect("draw", self.dibujar)
 
@@ -1698,6 +1921,8 @@ class Tarjeta(Gtk.EventBox):
         self.radio = RADIO
         self.ventana = None        # VentanaWidget cuando está suelta en el escritorio
         self._estira = False       # ya hay un elemento que absorbe la altura sobrante
+        self.prescindibles = []    # lo que se quita si la tarjeta es muy baja (ver add_w)
+        self._ajuste = None
         self.brillo = 1.0          # del neón (baja cuando parpadea)
         self._secuencia = []
         self._siguiente = time.monotonic() + __import__("random").uniform(1, 8)
@@ -1717,14 +1942,68 @@ class Tarjeta(Gtk.EventBox):
         self.connect("button-press-event", self.pulsar)
         self.connect("motion-notify-event", self.mover_raton)
 
-    def add_w(self, w, expand=None):
+    def add_w(self, w, expand=None, prescindible=0):
+        """prescindible: si la tarjeta es tan baja que no cabe todo (celda pequeña del
+        panel), se quita (1 = lo primero que se quita, 2 = después...) en vez de cortar
+        el texto de abajo. Las gráficas encogen antes de quitar nada."""
         # La primera gráfica crece si la tarjeta es más alta que su contenido
         # (filas de la misma altura en modo widgets, cuadrícula en modo panel).
         if expand is None:
             expand = isinstance(w, Grafica) and not self._estira
         self._estira = self._estira or expand
         self.contenido.pack_start(w, expand, expand, 0)
+        if prescindible:
+            w._prescindible, w._quitado = prescindible, False
+            self.prescindibles.append(w)
         return w
+
+    def do_size_allocate(self, a):
+        Gtk.EventBox.do_size_allocate(self, a)
+        if self.prescindibles:
+            self.ajustar_prescindibles(a.width, a.height)
+
+    def ajustar_prescindibles(self, ancho, alto):
+        """Quita lo prescindible que haga falta para que el resto quepa en `alto`."""
+        interior = ancho - self.contenido.get_margin_start() - self.contenido.get_margin_end()
+
+        def alto_de(w):
+            # Oculto, GTK lo mide como 0: se usa lo que medía la última vez que se vio.
+            if w.get_visible():
+                padre = w.get_parent()
+                w._alto = (w.get_preferred_height_for_width(max(1, interior))[0]
+                           + (padre.get_spacing() if isinstance(padre, Gtk.Box) else 0))
+            return getattr(w, "_alto", 0)
+
+        for w in self.prescindibles:
+            if w._quitado and w.get_visible():
+                w._quitado = False  # alguien lo ha vuelto a mostrar (show_all)
+        candidatos = [w for w in self.prescindibles if w.get_visible() or w._quitado]
+        necesario = self.contenido.get_preferred_height_for_width(ancho)[0]
+        necesario += sum(alto_de(w) for w in candidatos if w._quitado)
+        quitar = set()
+        for w in sorted(candidatos, key=lambda x: x._prescindible):
+            if necesario <= alto:
+                break
+            necesario -= alto_de(w)
+            quitar.add(w)
+        cambios = [(w, w not in quitar) for w in candidatos if w.get_visible() != (w not in quitar)]
+        if cambios and not self._ajuste:
+            # No se cambia nada en mitad de la asignación de tamaños: justo después.
+            def aplicar():
+                self._ajuste = None
+                for w, ver in cambios:
+                    w._quitado = not ver
+                    w.set_visible(ver)
+                return False
+            self._ajuste = GLib.idle_add(aplicar)
+
+    def prescindibles_grupo(self, grupo, widgets, base):
+        """Filas que se crean sobre la marcha (p. ej. una por app): se quitan en el orden de
+        `widgets` con prioridad desde `base`. Sustituye a las del mismo grupo de antes."""
+        self.prescindibles = [w for w in self.prescindibles if getattr(w, "_grupo", None) != grupo]
+        for i, w in enumerate(widgets):
+            w._grupo, w._prescindible, w._quitado = grupo, base + i / 100, False
+            self.prescindibles.append(w)
 
     def ajustar_margenes(self):
         """Margen interior del contenido. Con neón, la tarjeta se dibuja NEON_MARGEN px hacia
@@ -1740,7 +2019,9 @@ class Tarjeta(Gtk.EventBox):
     def alto_natural(self, ancho):
         """Alto de la tarjeta visible (sin el sitio del halo del neón) para un ancho visible."""
         m = self.margen_neon()
-        return self.contenido.get_preferred_height_for_width(ancho + 2 * m)[1] - 2 * m
+        alto = self.contenido.get_preferred_height_for_width(ancho + 2 * m)[1] - 2 * m
+        # Lo quitado por falta de sitio también cuenta: en su ventana cabe todo y vuelve a verse.
+        return alto + sum(getattr(w, "_alto", 0) for w in self.prescindibles if w._quitado)
 
     def set_opacidad(self, valor):
         """Atenúa el contenido y el fondo (1.0 = normal)."""
@@ -3093,20 +3374,20 @@ class Monitor:
         self.cpu_big = c.add_w(etiqueta("", "grande"))
         self.cpu_sub = c.add_w(etiqueta())
         self.cpu_temp = c.add_w(etiqueta())
-        self.cpu_graf = c.add_w(Grafica(["azul", "naranja"]))
-        c.add_w(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")))
-        self.cpu_nucleos = c.add_w(BarrasNucleos(len(s["cores"])))
-        self.uptime = c.add_w(etiqueta("", "dim"))
+        self.cpu_graf = c.add_w(Grafica(["azul", "naranja"]), prescindible=9)
+        c.add_w(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")), prescindible=2)
+        self.cpu_nucleos = c.add_w(BarrasNucleos(len(s["cores"])), prescindible=3)
+        self.uptime = c.add_w(etiqueta("", "dim"), prescindible=1)
 
         # Memoria
         c = self.tarjeta("memoria", "Memoria")
         self.mem_big = c.add_w(etiqueta("", "grande"))
         self.mem_sub = c.add_w(etiqueta())
         self.mem_barra = c.add_w(Barra())
-        self.swap_sub = c.add_w(etiqueta())
-        self.swap_barra = c.add_w(Barra())
-        self.mem_graf = c.add_w(Grafica(["morado", "naranja"]))
-        c.add_w(leyenda(("RAM %", "morado"), ("Swap %", "naranja")))
+        self.swap_sub = c.add_w(etiqueta(), prescindible=2)
+        self.swap_barra = c.add_w(Barra(), prescindible=2)
+        self.mem_graf = c.add_w(Grafica(["morado", "naranja"]), prescindible=9)
+        c.add_w(leyenda(("RAM %", "morado"), ("Swap %", "naranja")), prescindible=1)
 
         # Una tarjeta por GPU
         self.gpus = {}
@@ -3115,27 +3396,30 @@ class Monitor:
             c.nombre_menu = f"GPU · {g['name']}"
             c.add_w(etiqueta(g["name"], "dim"))
             w = {"big": c.add_w(etiqueta("", "grande")), "temp": c.add_w(etiqueta()),
-                 "sub": c.add_w(etiqueta()), "sub2": c.add_w(etiqueta()),
-                 "graf": c.add_w(Grafica(["verde", "azul"]))}
-            c.add_w(leyenda(("Uso %", "verde"), ("VRAM %", "azul")))
+                 "sub": c.add_w(etiqueta(), prescindible=3), "sub2": c.add_w(etiqueta(), prescindible=2),
+                 "graf": c.add_w(Grafica(["verde", "azul"]), prescindible=9)}
+            c.add_w(leyenda(("Uso %", "verde"), ("VRAM %", "azul")), prescindible=1)
             self.gpus[g["id"]] = w
 
         # Red
         c = self.tarjeta("red", "Red")
         self.red_big = c.add_w(etiqueta("", "grande"))
         self.red_sub = c.add_w(etiqueta())
-        self.red_graf = c.add_w(Grafica(["verde", "morado"], maximo=None))
-        c.add_w(leyenda(("Bajada", "verde"), ("Subida", "morado")))
+        self.red_graf = c.add_w(Grafica(["verde", "morado"], maximo=None), prescindible=9)
+        c.add_w(leyenda(("Bajada", "verde"), ("Subida", "morado")), prescindible=1)
 
         # Discos
         c = self.tarjeta("discos", "Almacenamiento")
         self.disco_big = c.add_w(etiqueta("", "grande"))
         self.disco_sub = c.add_w(etiqueta())
-        self.disco_graf = c.add_w(Grafica(["azul", "naranja"], maximo=None))
-        c.add_w(leyenda(("Lectura", "azul"), ("Escritura", "naranja")))
+        self.disco_graf = c.add_w(Grafica(["azul", "naranja"], maximo=None), prescindible=9)
+        c.add_w(leyenda(("Lectura", "azul"), ("Escritura", "naranja")), prescindible=7)
         self.particiones = {}
-        for mount, *_x in s["parts"][:6]:
-            self.particiones[mount] = (c.add_w(etiqueta()), c.add_w(Barra()))
+        partes = s["parts"][:6]
+        for i, (mount, *_x) in enumerate(partes):
+            # Si no caben, se van quitando las últimas particiones.
+            n = len(partes) - i
+            self.particiones[mount] = (c.add_w(etiqueta(), prescindible=n), c.add_w(Barra(), prescindible=n))
 
         # Sensores: los elegidos en "Elegir sensores…" (o una selección automática).
         c = self.tarjeta("temperaturas", "Sensores")
@@ -3152,6 +3436,7 @@ class Monitor:
         m["seccion_vol"].set_margin_top(8)
         c.add_w(m["volumen"])
         m["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
+        m["tarjeta"] = c
         self.multimedia = m
 
         # Reloj (tipo y opciones en el clic derecho)
@@ -3196,11 +3481,11 @@ class Monitor:
         # En una celda estrecha del panel, sin el icono grande (si no, no caben los grados).
         arriba.connect("size-allocate", lambda _w, a: GLib.idle_add(
             lambda: t["icono"].set_visible(a.width >= 220 and bool(t["icono"].get_pixbuf())) or False))
-        t["detalle"] = c.add_w(etiqueta("", "dim", envolver=True))
-        t["horas"] = c.add_w(PronosticoHoras())
+        t["detalle"] = c.add_w(etiqueta("", "dim", envolver=True), prescindible=3)
+        t["horas"] = c.add_w(PronosticoHoras(), prescindible=2)
         t["horas"].set_margin_top(4)
         t["dias"] = c.add_w(PronosticoDias(), expand=True)
-        t["ciudad"] = c.add_w(etiqueta("", "dim"))
+        t["ciudad"] = c.add_w(etiqueta("", "dim"), prescindible=1)
         self.tm = t
 
         # Dispositivos de audio
@@ -3219,7 +3504,7 @@ class Monitor:
             a[clave + "_abierto"] = False
             a[clave] = c.add_w(caja(True, 2))
         a["entrada_tit"].set_margin_top(4)
-        a["mic"] = c.add_w(boton_texto("Silenciar micrófono"))
+        a["mic"] = c.add_w(boton_texto("Silenciar micrófono"), prescindible=1)
         a["mic"].connect("clicked", lambda _b: self.silenciar_mic(not a.get("mic_estado")))
         a["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         self.audio = a
@@ -3269,14 +3554,17 @@ class Monitor:
             botones.pack_start(b, True, True, 0)
         d["controles"].pack_start(botones, False, False, 0)
         c.add_w(d["controles"])
+        d["tarjeta"] = c
         self.dc = d
 
         # Test de velocidad
         c = self.tarjeta("velocidad", "Test de velocidad")
-        self.vel_bajada = c.add_w(etiqueta("", "grande"))
-        self.vel_resto = c.add_w(etiqueta())
-        self.vel_estado = c.add_w(etiqueta("", "dim", envolver=True))
-        self.vel_barra = c.add_w(Barra(alto=4, color="acento"))
+        self.vel_reloj = c.add_w(Velocimetro(), expand=True)
+        self.vel_resto = c.add_w(etiqueta(), prescindible=2)
+        self.vel_resto.set_xalign(0.5)
+        self.vel_estado = c.add_w(etiqueta("", "dim", envolver=True), prescindible=1)
+        self.vel_estado.set_justify(Gtk.Justification.CENTER)
+        self.vel_estado.set_xalign(0.5)
         self.vel_boton = c.add_w(boton_texto("Iniciar test", "principal"))
         self.vel_boton.connect("clicked", lambda _b: self.iniciar_test())
 
@@ -4148,6 +4436,8 @@ class Monitor:
                 f = FilaDiscord(self.discord, m["id"], m["id"] == s["yo"])
                 d["lista"].pack_start(f, False, False, 0)
                 d["filas"][m["id"]] = f
+            # Si no caben todos, se quitan los últimos de la lista.
+            d["tarjeta"].prescindibles_grupo("miembros", list(d["filas"].values())[::-1], 1)
         for m in miembros:
             d["filas"][m["id"]].actualizar(m, m["id"] in s["hablando"], self.discord.avatares.get(m["avatar"]))
         d["lista"].set_visible(bool(miembros))
@@ -4184,30 +4474,39 @@ class Monitor:
         t = self.test
         r = t.resultado
         if t.midiendo:
+            p = t.parcial
             fase = {"ping": _("Midiendo ping…"), "bajada": _("Midiendo bajada…"),
                     "subida": _("Midiendo subida…")}.get(t.fase, _("Preparando…"))
-            directo = f" {self.fmt_mbps(t.actual)}" if t.actual else ""
-            poner_texto(self.vel_estado, fase + directo)
-            orden = {"ping": 0, "bajada": 1, "subida": 2}.get(t.fase, 0)
-            self.vel_barra.set(100 * (orden + t.progreso) / 3)
-            self.vel_barra.show()
+            poner_texto(self.vel_estado, fase)
+            # La escala crece si hace falta (como el cambio de rango de un velocímetro), nunca encoge.
+            self._vel_tope = max(getattr(self, "_vel_tope", 0) or 0,
+                                 velocimetro.tope(t.actual if t.fase in ("bajada", "subida") else 0,
+                                                  p.get("bajada")))
+            if t.fase == "ping" or not t.fase:
+                self.vel_reloj.poner(0, self._vel_tope, "…", _("PING"), "amarillo", t.progreso, "ms")
+            else:
+                self.vel_reloj.poner(t.actual or 0, self._vel_tope, self.fmt_cifra(t.actual),
+                                     (_("Bajada") if t.fase == "bajada" else _("Subida")).upper(),
+                                     "azul" if t.fase == "bajada" else "morado", t.progreso)
+            partes = [f"↓ {self.fmt_mbps(p['bajada'])}" if "bajada" in p else None,
+                      f"ping {p['ping']:.0f} ms" if "ping" in p else None]
+            poner_texto(self.vel_resto, " · ".join(x for x in partes if x) or " ")
             self.vel_boton.set_sensitive(False)
             self.vel_boton.set_label(_("Midiendo…"))
-            if t.fase == "bajada" and t.actual:
-                poner_texto(self.vel_bajada, f"↓ {self.fmt_mbps(t.actual)}")
             return True
         self.t_velocidad = None
-        self.vel_barra.hide()
+        self._vel_tope = 0
         self.vel_boton.set_sensitive(True)
         self.vel_boton.set_label(_("Repetir test") if r else _("Iniciar test"))
         if r and r is not self.config.get("velocidad"):
             self.config["velocidad"] = r
             self.guardar_config()
         if r:
-            poner_texto(self.vel_bajada, f"↓ {self.fmt_mbps(r['bajada'])}")
+            self.vel_reloj.poner(r["bajada"], velocimetro.tope(r["bajada"]), self.fmt_cifra(r["bajada"]),
+                                 _("Bajada").upper())
             poner_texto(self.vel_resto, f"↑ {self.fmt_mbps(r['subida'])} · ping {r['ping']:.0f} ms")
         else:
-            poner_texto(self.vel_bajada, "↓ —")
+            self.vel_reloj.poner(0, 100, "—", _("Bajada").upper())
             poner_texto(self.vel_resto, _("↑ — · ping —"))
         if t.error:
             poner_texto(self.vel_estado, t.error)
@@ -4215,6 +4514,12 @@ class Monitor:
             poner_texto(self.vel_estado, _("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
                         _("Mide ping, bajada y subida (unos 15 s)."))
         return False
+
+    @staticmethod
+    def fmt_cifra(v):
+        if not v:
+            return "0"
+        return f"{v:.0f}" if v >= 100 else f"{v:.1f}"
 
     # --- multimedia ---------------------------------------------------------
 
@@ -4230,6 +4535,8 @@ class Monitor:
             m["filas_rep"] = [FilaReproductor(self.reproductores) for _x in lista]
             for f in m["filas_rep"]:
                 m["reproductores"].pack_start(f, False, False, 0)
+            # Si no cabe todo, lo que suena (el primero) es lo último que se quita.
+            m["tarjeta"].prescindibles_grupo("reproductores", m["filas_rep"][:0:-1], 2)
         for f, d in zip(m["filas_rep"], lista):
             f.actualizar(d)
         m["reproductores"].set_visible(bool(lista))
@@ -4248,6 +4555,7 @@ class Monitor:
                 m["filas_vol"] += [FilaVolumen(self.mezclador, nombre, nombre) for nombre, _x, _x in apps]
                 for f in m["filas_vol"]:
                     m["volumen"].pack_start(f, False, False, 0)
+                m["tarjeta"].prescindibles_grupo("volumen", m["filas_vol"][::-1], 1)
             m["filas_vol"][0].actualizar(*datos["general"])
             for f, (_x, vol, mute) in zip(m["filas_vol"][1:], apps):
                 f.actualizar(vol, mute)

@@ -209,11 +209,11 @@ CLOCK, CALENDAR, AUDIO AND SPEED
                      the Windows default microphones (the multimedia one and
                      the communications one, used by Discord, Teams or games,
                      can be different).
-  Speed test ....... "Start test" button: measures ping, download and upload
-                     in about 15 s against Cloudflare's servers (the ones of
-                     speed.cloudflare.com). It uses data like any speed test
-                     (up to ~500 MB on very fast connections). The last result
-                     is saved.
+  Speed test ....... a speedometer like a car's; "Start test" button: measures
+                     ping, download and upload in about 15 s against
+                     Cloudflare's servers (the ones of speed.cloudflare.com). It
+                     uses data like any speed test (up to ~500 MB on very fast
+                     connections). The last result is saved.
   If you have too many widgets, hide them in menu > "Visible widgets".
 
 
@@ -222,7 +222,8 @@ MEDIA
 At the top, what is playing in each app (Spotify, Chrome, Edge, Firefox,
 Media Player...): cover, song, artist, progress and previous / pause / next
 buttons. If several are playing at once, they are all shown (up to 3), and
-each one is controlled separately.
+each one is controlled separately. Click the progress bar (or drag it) to
+jump to another point of the song or video.
 At the bottom, the mixer: general volume and the volume of each app with
 sound (game, Discord, browser...), with a mute button. It is the same volume
 as the Windows mixer.

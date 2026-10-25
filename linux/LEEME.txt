@@ -135,17 +135,19 @@ RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
   audio ............ la salida y la entrada (microfono) en uso; "Cambiar"
                      despliega las demas para elegir otra. Boton para
                      silenciar el microfono predeterminado.
-  Test de velocidad  boton "Iniciar test": mide ping, bajada y subida en unos
-                     15 s contra los servidores de Cloudflare. Gasta datos como
-                     cualquier test (hasta ~500 MB en conexiones muy rapidas).
-                     Se guarda el ultimo resultado.
+  Test de velocidad  un velocimetro como el de un coche; boton "Iniciar test":
+                     mide ping, bajada y subida en unos 15 s contra los
+                     servidores de Cloudflare. Gasta datos como cualquier test
+                     (hasta ~500 MB en conexiones muy rapidas). Se guarda el
+                     ultimo resultado.
 
 
 MULTIMEDIA
 ----------
 Arriba, lo que esta sonando en cada app (Spotify, Firefox, Chrome, VLC...):
 portada, cancion, artista, progreso y botones anterior / pausa / siguiente.
-Si suenan varias a la vez salen todas (hasta 3).
+Si suenan varias a la vez salen todas (hasta 3). Haz clic en la barra de
+progreso (o arrastrala) para saltar a otro punto de la cancion o el video.
 Abajo, el mezclador: volumen general y de cada app con sonido, con boton de
 silencio. Es el mismo volumen que el de COSMIC (PipeWire).
 

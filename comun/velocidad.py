@@ -31,6 +31,7 @@ class TestVelocidad:
         self.progreso = 0.0     # 0-1 dentro de la fase
         self.actual = None      # Mbps en directo durante la fase
         self.resultado = None   # {"ping", "bajada", "subida", "fecha"}
+        self.parcial = {}       # lo ya medido del test en marcha ("ping", "bajada")
         self.error = None
         self._hilo = None
 
@@ -42,13 +43,15 @@ class TestVelocidad:
         if self.midiendo:
             return
         self.error = None
+        self.parcial = {}
         self._hilo = threading.Thread(target=self._ejecutar, daemon=True)
         self._hilo.start()
 
     def _ejecutar(self):
         try:
-            ping = self._ping()
-            bajada = self._medir("bajada", self._trabajo_bajada, self.DURACION_BAJADA, self.MAX_BAJADA)
+            ping = self.parcial["ping"] = self._ping()
+            bajada = self.parcial["bajada"] = self._medir("bajada", self._trabajo_bajada,
+                                                          self.DURACION_BAJADA, self.MAX_BAJADA)
             subida = self._medir("subida", self._trabajo_subida, self.DURACION_SUBIDA, self.MAX_SUBIDA)
             self.resultado = {"ping": ping, "bajada": bajada, "subida": subida,
                               "fecha": time.strftime("%d/%m %H:%M")}

@@ -74,7 +74,7 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
     bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else os.geteuid() == 0)
 
 try:
-    from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
+    from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QGuiApplication,
                                QLinearGradient, QPainter, QPainterPath, QPen, QPixmap)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
@@ -86,6 +86,7 @@ try:
 
     from multimedia import Dispositivos, Mezclador, Reproductores
     from velocidad import TestVelocidad
+    import velocimetro
     from sensores import ES_WINDOWS, Sampler
     from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
@@ -304,7 +305,9 @@ class Grafica(QWidget):
 
     def __init__(self, series, maximo=100.0, alto=80):
         super().__init__()
-        self.setMinimumHeight(alto)
+        # Si la tarjeta va justa, encoge hasta 28 px antes que cortar los textos de debajo.
+        self.alto = alto
+        self.setMinimumHeight(28)
         self.maximo = maximo
         self.series = [(COLORES[c], deque([0.0] * HISTORIAL, maxlen=HISTORIAL)) for c in series]
 
@@ -348,6 +351,9 @@ class Grafica(QWidget):
             p.setBrush(Qt.NoBrush)
             p.drawPath(linea)
 
+    def sizeHint(self):
+        return QSize(ANCHO - 32, self.alto)
+
 
 class Barra(QWidget):
     """Barra de progreso fina; sin color fijo, cambia de color al llenarse."""
@@ -382,7 +388,10 @@ class BarrasNucleos(QWidget):
     def __init__(self, n):
         super().__init__()
         self.valores = [0.0] * n
-        self.setFixedHeight(42)
+        self.setMinimumHeight(16)
+
+    def sizeHint(self):
+        return QSize(ANCHO - 32, 42)
 
     def set(self, valores):
         self.valores = valores
@@ -471,6 +480,216 @@ def recortar(label, texto, ancho):
     label.setToolTip(texto if label.text() != texto else "")
 
 
+class BarraProgreso(QWidget):
+    """Progreso de la canción o el vídeo: clic o arrastrar para ir a otro punto."""
+
+    ALTO = 14
+
+    def __init__(self, al_mover, al_soltar):
+        super().__init__()
+        self.setFixedHeight(self.ALTO)
+        self.al_mover, self.al_soltar = al_mover, al_soltar
+        self.valor = 0.0          # 0-1
+        self.puede = False        # la app deja saltar
+        self.encima = False
+        self.arrastre = None      # fracción mientras se arrastra
+
+    def set(self, valor, puede):
+        if self.arrastre is None and (valor, puede) != (self.valor, self.puede):
+            self.valor, self.puede = valor, puede
+            self.setCursor(Qt.PointingHandCursor if puede else Qt.ArrowCursor)
+            self.update()
+
+    def _frac(self, e):
+        return min(max(e.position().x() / max(1, self.width()), 0.0), 1.0)
+
+    def _tarjeta(self):
+        w = self.parentWidget()
+        while w and not isinstance(w, Tarjeta):
+            w = w.parentWidget()
+        return w
+
+    def enterEvent(self, _e):
+        self.encima = True
+        self.update()
+
+    def leaveEvent(self, _e):
+        self.encima = False
+        self.update()
+
+    def mousePressEvent(self, e):
+        tarjeta = self._tarjeta()
+        if e.button() != Qt.LeftButton or not self.puede or (tarjeta and tarjeta.en_edicion()):
+            e.ignore()  # el clic derecho (menú) y la edición del panel siguen a la tarjeta
+            return
+        self.arrastre = self._frac(e)
+        self.al_mover(self.arrastre)
+        self.update()
+
+    def mouseMoveEvent(self, e):
+        if self.arrastre is None:
+            e.ignore()
+            return
+        self.arrastre = self._frac(e)
+        self.al_mover(self.arrastre)
+        self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.arrastre is None or e.button() != Qt.LeftButton:
+            e.ignore()
+            return
+        self.valor = self._frac(e)
+        self.arrastre = None
+        self.al_soltar(self.valor)
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        w, h = self.width(), self.height()
+        activo = self.puede and (self.encima or self.arrastre is not None)
+        grosor = 6 if activo else 4
+        y = (h - grosor) / 2
+        p.setBrush(tenue(28))
+        p.drawRoundedRect(QRectF(0, y, w, grosor), grosor / 2, grosor / 2)
+        frac = self.valor if self.arrastre is None else self.arrastre
+        if frac * w > 0.5:
+            p.setBrush(COLORES["verde"])
+            p.drawRoundedRect(QRectF(0, y, max(frac * w, grosor), grosor), grosor / 2, grosor / 2)
+        if activo:
+            p.setBrush(QColor(C_TEXTO))
+            p.drawEllipse(QPointF(min(max(frac * w, 6), w - 6), h / 2), 6, 6)
+
+
+def shiboken_vivo(w):
+    """False si Qt ya ha borrado el widget (filas rehechas con deleteLater)."""
+    try:
+        import shiboken6
+    except ImportError:
+        return True
+    return shiboken6.isValid(w)
+
+
+def mezclar(a, b, t):
+    return QColor(round(a.red() + (b.red() - a.red()) * t), round(a.green() + (b.green() - a.green()) * t),
+                  round(a.blue() + (b.blue() - a.blue()) * t))
+
+
+class Velocimetro(QWidget):
+    """Test de velocidad como el velocímetro digital de un deportivo: arco de segmentos
+    que se encienden, la cifra en el centro y la fase encima."""
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumHeight(56)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.valor = 0.0        # lo que marca ahora (se anima hacia el objetivo)
+        self.objetivo = 0.0
+        self.tope = 100
+        self.texto = "—"        # la cifra del centro
+        self.unidad = "Mbps"
+        self.fase = ""          # rótulo de encima
+        self.color = "azul"
+        self.progreso = None    # 0-1 mientras mide (arco fino exterior)
+        self.animacion = QTimer(self)
+        self.animacion.setInterval(16)
+        self.animacion.timeout.connect(self._animar)
+
+    def sizeHint(self):
+        return QSize(ANCHO - 32, 190)
+
+    def poner(self, valor, tope, texto, fase, color="azul", progreso=None, unidad="Mbps"):
+        self.objetivo = valor or 0.0
+        self.tope, self.texto, self.fase, self.color, self.progreso, self.unidad = (
+            tope, texto, fase, color, progreso, unidad)
+        if abs(self.objetivo - self.valor) > self.tope * 1e-4:
+            if not self.animacion.isActive():
+                self.animacion.start()
+        self.update()
+
+    def _animar(self):
+        self.valor += (self.objetivo - self.valor) * 0.14
+        if abs(self.objetivo - self.valor) <= self.tope * 1e-4:
+            self.valor = self.objetivo
+            self.animacion.stop()
+        self.update()
+
+    @staticmethod
+    def _arco(p, cx, cy, r, a0, a1):
+        """Arco entre dos ángulos en radianes (en el sentido de las agujas, eje y hacia abajo)."""
+        caja = QRectF(cx - r, cy - r, 2 * r, 2 * r)
+        p.drawArc(caja, round(-math.degrees(a0) * 16), round(-math.degrees(a1 - a0) * 16))
+
+    def paintEvent(self, _e):
+        vm = velocimetro
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        cx, cy, r = vm.geometria(w, h)
+        grueso = max(6.0, r * 0.13)
+        r_med = r - grueso / 2 - 4
+        frac = vm.fraccion(self.valor, self.tope)
+        color = COLORES.get(self.color, COLORES["azul"])
+        oscuro = mezclar(color, QColor(0, 0, 0), 0.35)
+        n = vm.SEGMENTOS
+        paso = math.radians(vm.ARCO) / n
+        for i in range(n):
+            if (i + 0.5) / n <= frac:
+                c = mezclar(oscuro, color, min(1, i / max(1, n - 1) * 1.6))
+            else:
+                c = tenue(20)
+            p.setPen(QPen(c, grueso, Qt.SolidLine, Qt.FlatCap))
+            self._arco(p, cx, cy, r_med, vm.angulo(i / n) + paso * 0.14, vm.angulo((i + 1) / n) - paso * 0.14)
+        # Brillo en la punta, como la aguja encendida.
+        if frac > 0:
+            brillo = QColor(color)
+            brillo.setAlpha(90)
+            p.setPen(QPen(brillo, grueso * 1.9, Qt.SolidLine, Qt.FlatCap))
+            a = vm.angulo(frac)
+            self._arco(p, cx, cy, r_med, a - paso * 0.9, a)
+        # Progreso de la fase: arco fino por fuera.
+        if self.progreso is not None:
+            p.setPen(QPen(tenue(25), 2, Qt.SolidLine, Qt.RoundCap))
+            self._arco(p, cx, cy, r - 1, vm.angulo(0), vm.angulo(1))
+            if self.progreso > 0:
+                c = QColor(color)
+                c.setAlpha(205)
+                p.setPen(QPen(c, 2, Qt.SolidLine, Qt.RoundCap))
+                self._arco(p, cx, cy, r - 1, vm.angulo(0), vm.angulo(min(1, self.progreso)))
+        # Escala rotulada por dentro del arco (si hay sitio).
+        r_txt = r_med - grueso / 2 - max(9, r * 0.1)
+        if r >= 70:
+            f = QFont(self.font())
+            f.setPixelSize(round(max(8, min(12, r * 0.1)) * ESCALA))
+            p.setFont(f)
+            p.setPen(QColor(C_SEC))
+            for v in vm.marcas(self.tope):
+                a = vm.angulo(vm.fraccion(v, self.tope))
+                x, y = cx + math.cos(a) * r_txt, cy + math.sin(a) * r_txt
+                p.drawText(QRectF(x - 20, y - 10, 40, 20), Qt.AlignCenter, vm.fmt_marca(v))
+        # Cifra, unidad y fase.
+        hueco = r_txt * 1.25 if r >= 70 else r_med * 1.3
+        f = fuente_que_quepa(self.texto, hueco, r * 0.42, QFont.Light, self.font())
+        p.setFont(f)
+        p.setPen(QColor(C_TEXTO))
+        alto_cifra = QFontMetricsF(f).height()
+        p.drawText(QRectF(cx - hueco, cy - alto_cifra / 2, 2 * hueco, alto_cifra), Qt.AlignCenter, self.texto)
+        chico = QFont(self.font())
+        chico.setPixelSize(round(max(9, r * 0.13)))
+        alto_chico = QFontMetricsF(chico).height()
+        p.setFont(chico)
+        p.setPen(QColor(C_SEC))
+        p.drawText(QRectF(cx - r, cy + alto_cifra * 0.38, 2 * r, alto_chico), Qt.AlignHCenter | Qt.AlignTop,
+                   self.unidad)
+        if self.fase and r >= 60:  # en pequeño no cabe sin pisar el arco
+            chico.setBold(True)
+            p.setFont(chico)
+            p.setPen(color)
+            p.drawText(QRectF(cx - r, cy - alto_cifra * 0.42 - alto_chico, 2 * r, alto_chico),
+                       Qt.AlignHCenter | Qt.AlignBottom, self.fase)
+
+
 class FilaReproductor(QWidget):
     """Una app con música: portada, título, artista, progreso y controles."""
 
@@ -515,17 +734,37 @@ class FilaReproductor(QWidget):
             b.clicked.connect(lambda _=False, a=accion: self.rep.orden(self.ident, a))
             abajo.addWidget(b)
         caja.addLayout(abajo)
-        self.progreso = Barra(alto=4, color=COLORES["verde"])
+        self.progreso = BarraProgreso(self._previsualizar, self._buscar)
         caja.addWidget(self.progreso)
+        self.dur = 0
+        self.buscado = None  # (segundo, cuándo): hasta que la app informe de la posición nueva
+
+    def _previsualizar(self, frac):
+        self.tiempo.setText(f"{fmt_tiempo(frac * self.dur)} / {fmt_tiempo(self.dur)}")
+
+    def _buscar(self, frac):
+        self.buscado = (frac * self.dur, time.monotonic())
+        self.rep.buscar(self.ident, frac * self.dur)
 
     def actualizar(self, d):
         self.ident = d["id"]
+        self.dur = d["dur"]
+        pos = d["pos"]
+        if self.buscado:
+            seg, cuando = self.buscado
+            pasado = time.monotonic() - cuando
+            if abs(pos - seg) < 2.5 or pasado > 3:
+                self.buscado = None
+            else:  # la app aún no ha dicho la posición nueva: no volver atrás un momento
+                pos = min(seg + (pasado if d["reproduciendo"] else 0), d["dur"])
         ancho = ANCHO - 32 - self.PORTADA - 10
         recortar(self.titulo, d["titulo"], ancho)
         recortar(self.artista, d["artista"] or "—", ancho)
         recortar(self.app, d["app"], ancho)
-        self.tiempo.setText(f"{fmt_tiempo(d['pos'])} / {fmt_tiempo(d['dur'])}" if d["dur"] > 0 else "")
-        self.progreso.set(100 * d["pos"] / d["dur"] if d["dur"] > 0 else 0)
+        if self.progreso.arrastre is None:
+            self.tiempo.setText(f"{fmt_tiempo(pos)} / {fmt_tiempo(d['dur'])}" if d["dur"] > 0 else "")
+        self.progreso.set(pos / d["dur"] if d["dur"] > 0 else 0, d.get("buscar", False))
+        self.progreso.setToolTip("" if d.get("buscar") else _("Esta app no deja saltar a otro punto"))
         self.progreso.setVisible(d["dur"] > 0)
         poner_icono(self.b_play, "pausa" if d["reproduciendo"] else "play", 14)
         self.b_anterior.setEnabled(d["anterior"])
@@ -670,8 +909,13 @@ class RelojVista(QWidget):
         o = self.opciones
         minimos = {"digital": 96, "analogico": 210, "minimal": 104,
                    "mundial": 44 * max(1, len(o["zonas"]))}
-        self.setMinimumHeight(minimos.get(o["estilo"], 96))
+        self._alto = minimos.get(o["estilo"], 96)
+        self.setMinimumHeight(int(self._alto * 0.55))
+        self.updateGeometry()
         self.update()
+
+    def sizeHint(self):
+        return QSize(ANCHO - 32, self._alto)
 
     def hora(self, t):
         o = self.opciones
@@ -817,8 +1061,11 @@ class CalendarioMes(QWidget):
         super().__init__()
         self.primer_dia = primer_dia  # 0 = lunes, 6 = domingo
         self.ir_a_hoy()
-        self.setMinimumHeight(165)
+        self.setMinimumHeight(84)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def sizeHint(self):
+        return QSize(ANCHO - 32, 165)
 
     def ir_a_hoy(self):
         hoy = datetime.date.today()
@@ -931,9 +1178,9 @@ class ListaSensores(QWidget):
     def __init__(self):
         super().__init__()
         self.lineas = []   # ("seccion", texto) o ("sensor", nombre, valor, color)
-        sp = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        sp.setHeightForWidth(True)
-        self.setSizePolicy(sp)
+        # Sin "alto para el ancho": Qt no deja bajar de ese alto, y en una celda pequeña
+        # tiene que poder encoger (enseña "… y N más").
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_lineas(self, lineas):
         cambia_alto = len(lineas) != len(self.lineas)
@@ -945,14 +1192,11 @@ class ListaSensores(QWidget):
     def columnas(self, ancho):
         return max(1, min(ancho // self.ANCHO_COLUMNA, len(self.lineas) or 1))
 
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, ancho):
+    def alto_para(self, ancho):
         return -(-len(self.lineas) // self.columnas(ancho)) * self.FILA
 
     def sizeHint(self):
-        return QSize(ANCHO - 32, self.heightForWidth(ANCHO - 32))
+        return QSize(ANCHO - 32, self.alto_para(ANCHO - 32))
 
     def minimumSizeHint(self):
         return QSize(100, self.FILA * 3)
@@ -1182,6 +1426,8 @@ class Tarjeta(QWidget):
         self.radio = 8
         self.ventana = None       # VentanaWidget cuando está suelta en el escritorio
         self._estira = False      # ya hay un elemento que absorbe la altura sobrante
+        self.prescindibles = []   # lo que se quita si la tarjeta es muy baja (ver add)
+        self._ajuste = False
         self._arrastre = None     # "mover" o "tam" mientras se edita el panel
         self.brillo = 1.0         # del neón (baja cuando parpadea)
         self._secuencia = []
@@ -1199,14 +1445,84 @@ class Tarjeta(QWidget):
         self.ajustar_margenes()
         self.caja.setSpacing(6)
         self.lb_titulo = self.add(etiqueta(titulo.upper(), "titulo"))
+        # Si cambia el contenido (entra una canción, una persona...), se mira otra vez si cabe.
+        self.contenido.installEventFilter(self)
 
-    def add(self, w):
+    def add(self, w, prescindible=0):
+        """prescindible: si la tarjeta es tan baja que no cabe todo (celda pequeña del
+        panel), se quita (1 = lo primero que se quita, 2 = después...) en vez de cortar
+        el texto de abajo. Las gráficas encogen antes de quitar nada."""
         # La primera gráfica crece si la tarjeta es más alta que su contenido
         # (filas de la misma altura en modo widgets, cuadrícula en modo panel).
-        estirar = isinstance(w, Grafica) and not self._estira
+        estirar = isinstance(w, (Grafica, Velocimetro)) and not self._estira
         self._estira = self._estira or estirar
         self.caja.addWidget(w, 1 if estirar else 0)
+        if prescindible:
+            w._prescindible, w._quitado = prescindible, False
+            self.prescindibles.append(w)
         return w
+
+    def prescindibles_grupo(self, grupo, widgets, base):
+        """Filas que se crean sobre la marcha (p. ej. una por app): se quitan en el orden de
+        `widgets` con prioridad desde `base`. Sustituye a las del mismo grupo de antes."""
+        self.prescindibles = [w for w in self.prescindibles if getattr(w, "_grupo", None) != grupo]
+        for i, w in enumerate(widgets):
+            w._grupo, w._prescindible, w._quitado = grupo, base + i / 100, False
+            self.prescindibles.append(w)
+        self.pedir_ajuste()
+
+    def eventFilter(self, obj, e):
+        if obj is self.contenido and e.type() == QEvent.LayoutRequest:
+            self.pedir_ajuste()
+        return False
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.pedir_ajuste()
+
+    def pedir_ajuste(self):
+        if self.prescindibles and not self._ajuste:
+            self._ajuste = True
+            QTimer.singleShot(0, self.ajustar_prescindibles)
+
+    def ajustar_prescindibles(self):
+        """Quita lo prescindible que haga falta para que el resto quepa en el alto de la tarjeta."""
+        self._ajuste = False
+        ancho, alto = self.width(), self.height()
+        m = self.caja.contentsMargins()
+        interior = max(1, ancho - m.left() - m.right())
+
+        def alto_de(w):
+            # Oculto no cuenta en el layout: se usa lo que medía la última vez que se vio.
+            if not w.isHidden():
+                caja = w.parentWidget().layout() if w.parentWidget() else None
+                minimo = (w.heightForWidth(interior) if w.hasHeightForWidth()
+                          else max(w.minimumSizeHint().height(), w.minimumHeight()))
+                w._alto = minimo + (caja.spacing() if caja else 0)
+            return getattr(w, "_alto", 0)
+
+        self.prescindibles = [w for w in self.prescindibles if shiboken_vivo(w)]
+        for w in self.prescindibles:
+            if w._quitado and not w.isHidden():
+                w._quitado = False  # alguien lo ha vuelto a mostrar
+        candidatos = [w for w in self.prescindibles if not w.isHidden() or w._quitado]
+        caja = self.caja
+        necesario = (caja.totalMinimumHeightForWidth(ancho) if caja.hasHeightForWidth()
+                     else caja.totalMinimumSize().height())
+        necesario += sum(alto_de(w) for w in candidatos if w._quitado)
+        for w in candidatos:
+            alto_de(w)
+        quitar = set()
+        for w in sorted(candidatos, key=lambda x: x._prescindible):
+            if necesario <= alto:
+                break
+            necesario -= alto_de(w)
+            quitar.add(w)
+        for w in candidatos:
+            ver = w not in quitar
+            if w.isHidden() == ver:
+                w._quitado = not ver
+                w.setVisible(ver)
 
     def terminar(self):
         """Sin gráfica que crezca, el espacio sobrante va al final."""
@@ -1216,7 +1532,10 @@ class Tarjeta(QWidget):
     def alto_natural(self, ancho):
         caja = self.layout()
         minimo = caja.totalMinimumSize().height()
-        return max(caja.totalHeightForWidth(ancho), minimo) if caja.hasHeightForWidth() else minimo
+        alto = max(caja.totalHeightForWidth(ancho) if caja.hasHeightForWidth() else caja.totalSizeHint().height(),
+                   minimo)
+        # Lo quitado por falta de sitio también cuenta: en su ventana cabe todo y vuelve a verse.
+        return alto + sum(getattr(w, "_alto", 0) for w in self.prescindibles if w._quitado)
 
     def set_opacidad(self, valor):
         """Atenúa el contenido y el fondo (1.0 = normal)."""
@@ -2023,9 +2342,9 @@ class PronosticoDias(QWidget):
     def __init__(self):
         super().__init__()
         self.dias = []
-        sp = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        sp.setHeightForWidth(True)
-        self.setSizePolicy(sp)
+        # Sin "alto para el ancho": Qt no deja bajar de ese alto, y en una celda pequeña
+        # tiene que poder encoger (enseña menos días).
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def poner(self, dias):
         cambia = len(dias) != len(self.dias)
@@ -2034,14 +2353,8 @@ class PronosticoDias(QWidget):
             self.updateGeometry()
         self.update()
 
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, _ancho):
-        return self.FILA * max(2, len(self.dias))
-
     def sizeHint(self):
-        return QSize(ANCHO - 32, self.heightForWidth(0))
+        return QSize(ANCHO - 32, self.FILA * max(2, len(self.dias)))
 
     def minimumSizeHint(self):
         return QSize(100, self.FILA * 2)
@@ -3040,20 +3353,20 @@ class Monitor:
         self.cpu_big = c.add(etiqueta("", "grande"))
         self.cpu_sub = c.add(etiqueta())
         self.cpu_temp = c.add(etiqueta())
-        self.cpu_graf = c.add(Grafica(["azul", "naranja"]))
-        c.add(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")))
-        self.cpu_nucleos = c.add(BarrasNucleos(len(s["cores"])))
-        self.uptime = c.add(etiqueta("", "dim"))
+        self.cpu_graf = c.add(Grafica(["azul", "naranja"]), prescindible=9)
+        c.add(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")), prescindible=2)
+        self.cpu_nucleos = c.add(BarrasNucleos(len(s["cores"])), prescindible=3)
+        self.uptime = c.add(etiqueta("", "dim"), prescindible=1)
 
         # Memoria
         c = self.tarjeta("memoria", "Memoria")
         self.mem_big = c.add(etiqueta("", "grande"))
         self.mem_sub = c.add(etiqueta())
         self.mem_barra = c.add(Barra())
-        self.swap_sub = c.add(etiqueta())
-        self.swap_barra = c.add(Barra())
-        self.mem_graf = c.add(Grafica(["morado", "naranja"]))
-        c.add(leyenda(("RAM %", "morado"), ("Archivo de paginación %", "naranja")))
+        self.swap_sub = c.add(etiqueta(), prescindible=2)
+        self.swap_barra = c.add(Barra(), prescindible=2)
+        self.mem_graf = c.add(Grafica(["morado", "naranja"]), prescindible=9)
+        c.add(leyenda(("RAM %", "morado"), ("Archivo de paginación %", "naranja")), prescindible=1)
 
         # Una tarjeta por GPU
         self.gpus = {}
@@ -3062,9 +3375,9 @@ class Monitor:
             c.nombre_menu = f"GPU · {g['name']}"
             c.add(etiqueta(g["name"], "dim"))
             w = {"big": c.add(etiqueta("", "grande")), "temp": c.add(etiqueta()),
-                 "sub": c.add(etiqueta()), "sub2": c.add(etiqueta()),
-                 "graf": c.add(Grafica(["verde", "azul"]))}
-            c.add(leyenda(("Uso %", "verde"), ("VRAM %", "azul")))
+                 "sub": c.add(etiqueta(), prescindible=3), "sub2": c.add(etiqueta(), prescindible=2),
+                 "graf": c.add(Grafica(["verde", "azul"]), prescindible=9)}
+            c.add(leyenda(("Uso %", "verde"), ("VRAM %", "azul")), prescindible=1)
             self.gpus[g["id"]] = w
 
         # FPS (solo Windows: usa PresentMon)
@@ -3073,26 +3386,29 @@ class Monitor:
             c = self.tarjeta("fps", "FPS")
             self.fps = {"big": c.add(etiqueta("", "grande")), "app": c.add(etiqueta()),
                         "sub": c.add(etiqueta("", "dim")),
-                        "graf": c.add(Grafica(["verde", "naranja"], maximo=None))}
-            c.add(leyenda(("FPS", "verde"), ("1% low", "naranja")))
+                        "graf": c.add(Grafica(["verde", "naranja"], maximo=None), prescindible=9)}
+            c.add(leyenda(("FPS", "verde"), ("1% low", "naranja")), prescindible=1)
             self.fps["sub"].setWordWrap(True)
 
         # Red
         c = self.tarjeta("red", "Red")
         self.red_big = c.add(etiqueta("", "grande"))
         self.red_sub = c.add(etiqueta())
-        self.red_graf = c.add(Grafica(["verde", "morado"], maximo=None))
-        c.add(leyenda(("Bajada", "verde"), ("Subida", "morado")))
+        self.red_graf = c.add(Grafica(["verde", "morado"], maximo=None), prescindible=9)
+        c.add(leyenda(("Bajada", "verde"), ("Subida", "morado")), prescindible=1)
 
         # Discos
         c = self.tarjeta("discos", "Almacenamiento")
         self.disco_big = c.add(etiqueta("", "grande"))
         self.disco_sub = c.add(etiqueta())
-        self.disco_graf = c.add(Grafica(["azul", "naranja"], maximo=None))
-        c.add(leyenda(("Lectura", "azul"), ("Escritura", "naranja")))
+        self.disco_graf = c.add(Grafica(["azul", "naranja"], maximo=None), prescindible=9)
+        c.add(leyenda(("Lectura", "azul"), ("Escritura", "naranja")), prescindible=7)
         self.particiones = {}
-        for mount, *_x in s["parts"][:6]:
-            self.particiones[mount] = (c.add(etiqueta()), c.add(Barra()))
+        partes = s["parts"][:6]
+        for i, (mount, *_x) in enumerate(partes):
+            # Si no caben, se van quitando las últimas particiones.
+            n = len(partes) - i
+            self.particiones[mount] = (c.add(etiqueta(), prescindible=n), c.add(Barra(), prescindible=n))
 
         # Sensores: los elegidos en "Elegir sensores…" (o una selección automática).
         c = self.tarjeta("temperaturas", "Sensores")
@@ -3123,6 +3439,7 @@ class Monitor:
             c.add(m["volumen"])
             m["aviso"] = c.add(etiqueta("", "dim"))
             m["aviso"].setWordWrap(True)
+            m["tarjeta"] = c
             self.multimedia = m
 
         # Reloj (tipo y opciones en el clic derecho)
@@ -3180,12 +3497,12 @@ class Monitor:
         textos.addWidget(t["desc"])
         fila.addLayout(textos, 1)
         c.add(arriba)
-        t["detalle"] = c.add(etiqueta("", "dim"))
+        t["detalle"] = c.add(etiqueta("", "dim"), prescindible=3)
         t["detalle"].setWordWrap(True)
-        t["horas"] = c.add(PronosticoHoras())
+        t["horas"] = c.add(PronosticoHoras(), prescindible=2)
         t["dias"] = c.add(PronosticoDias())
         c._estira = True  # los días absorben el alto sobrante
-        t["ciudad"] = c.add(etiqueta("", "dim"))
+        t["ciudad"] = c.add(etiqueta("", "dim"), prescindible=1)
         self.tm = t
 
         # Dispositivos de audio (solo Windows)
@@ -3221,7 +3538,7 @@ class Monitor:
             a["mic"].setCheckable(True)
             a["mic"].setCursor(Qt.PointingHandCursor)
             a["mic"].clicked.connect(self.silenciar_mic)
-            c.add(a["mic"])
+            c.add(a["mic"], prescindible=1)
             a["aviso"] = c.add(etiqueta("", "dim"))
             a["aviso"].setWordWrap(True)
             self.audio = a
@@ -3281,15 +3598,17 @@ class Monitor:
             botones.addWidget(b)
         cc.addLayout(botones)
         c.add(d["controles"])
+        d["tarjeta"] = c
         self.dc = d
 
         # Test de velocidad
         c = self.tarjeta("velocidad", "Test de velocidad")
-        self.vel_bajada = c.add(etiqueta("", "grande"))
-        self.vel_resto = c.add(etiqueta())
-        self.vel_estado = c.add(etiqueta("", "dim"))
+        self.vel_reloj = c.add(Velocimetro())
+        self.vel_resto = c.add(etiqueta(), prescindible=2)
+        self.vel_resto.setAlignment(Qt.AlignHCenter)
+        self.vel_estado = c.add(etiqueta("", "dim"), prescindible=1)
         self.vel_estado.setWordWrap(True)
-        self.vel_barra = c.add(Barra(alto=4, color="acento"))
+        self.vel_estado.setAlignment(Qt.AlignHCenter)
         self.vel_boton = QPushButton(_("Iniciar test"))
         self.vel_boton.setProperty("estilo", "principal")
         self.vel_boton.setCursor(Qt.PointingHandCursor)
@@ -4139,6 +4458,8 @@ class Monitor:
                 f = FilaDiscord(self.discord, m["id"], m["id"] == s["yo"])
                 d["caja_lista"].addWidget(f)
                 d["filas"][m["id"]] = f
+            # Si no caben todos, se quitan los últimos de la lista.
+            d["tarjeta"].prescindibles_grupo("miembros", list(d["filas"].values())[::-1], 1)
         for m in miembros:
             d["filas"][m["id"]].actualizar(m, m["id"] in s["hablando"], self.discord.avatares.get(m["avatar"]))
         d["lista"].setVisible(bool(miembros))
@@ -4173,35 +4494,51 @@ class Monitor:
         t = self.test
         r = t.resultado
         if t.midiendo:
-            fase = {"ping": _("Midiendo ping…"), "bajada": _("Midiendo bajada…"), "subida": _("Midiendo subida…")}.get(t.fase, _("Preparando…"))
-            directo = f" {self.fmt_mbps(t.actual)}" if t.actual else ""
-            self.vel_estado.setText(fase + directo)
-            orden = {"ping": 0, "bajada": 1, "subida": 2}.get(t.fase, 0)
-            self.vel_barra.set(100 * (orden + t.progreso) / 3)
-            self.vel_barra.show()
+            p = t.parcial
+            fase = {"ping": _("Midiendo ping…"), "bajada": _("Midiendo bajada…"),
+                    "subida": _("Midiendo subida…")}.get(t.fase, _("Preparando…"))
+            self.vel_estado.setText(fase)
+            # La escala crece si hace falta (como el cambio de rango de un velocímetro), nunca encoge.
+            self._vel_tope = max(getattr(self, "_vel_tope", 0) or 0,
+                                 velocimetro.tope(t.actual if t.fase in ("bajada", "subida") else 0,
+                                                  p.get("bajada")))
+            if t.fase == "ping" or not t.fase:
+                self.vel_reloj.poner(0, self._vel_tope, "…", _("PING"), "amarillo", t.progreso, "ms")
+            else:
+                self.vel_reloj.poner(t.actual or 0, self._vel_tope, self.fmt_cifra(t.actual),
+                                     (_("Bajada") if t.fase == "bajada" else _("Subida")).upper(),
+                                     "azul" if t.fase == "bajada" else "morado", t.progreso)
+            partes = [f"↓ {self.fmt_mbps(p['bajada'])}" if "bajada" in p else None,
+                      f"ping {p['ping']:.0f} ms" if "ping" in p else None]
+            self.vel_resto.setText(" · ".join(x for x in partes if x) or " ")
             self.vel_boton.setEnabled(False)
             self.vel_boton.setText(_("Midiendo…"))
-            if t.fase == "bajada" and t.actual:
-                self.vel_bajada.setText(f"↓ {self.fmt_mbps(t.actual)}")
             return
         self.t_velocidad.stop()
-        self.vel_barra.hide()
+        self._vel_tope = 0
         self.vel_boton.setEnabled(True)
         self.vel_boton.setText(_("Repetir test") if r else _("Iniciar test"))
         if r and r is not self.config.get("velocidad"):
             self.config["velocidad"] = r
             self.guardar_config()
         if r:
-            self.vel_bajada.setText(f"↓ {self.fmt_mbps(r['bajada'])}")
+            self.vel_reloj.poner(r["bajada"], velocimetro.tope(r["bajada"]), self.fmt_cifra(r["bajada"]),
+                                 _("Bajada").upper())
             self.vel_resto.setText(f"↑ {self.fmt_mbps(r['subida'])} · ping {r['ping']:.0f} ms")
         else:
-            self.vel_bajada.setText("↓ —")
+            self.vel_reloj.poner(0, 100, "—", _("Bajada").upper())
             self.vel_resto.setText(_("↑ — · ping —"))
         if t.error:
             self.vel_estado.setText(t.error)
         else:
             self.vel_estado.setText(_("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
                                     _("Mide ping, bajada y subida (unos 15 s)."))
+
+    @staticmethod
+    def fmt_cifra(v):
+        if not v:
+            return "0"
+        return f"{v:.0f}" if v >= 100 else f"{v:.1f}"
 
     # --- multimedia ---------------------------------------------------------
 
@@ -4219,6 +4556,8 @@ class Monitor:
             m["filas_rep"] = [FilaReproductor(self.reproductores) for _x in lista]
             for f in m["filas_rep"]:
                 m["caja_rep"].addWidget(f)
+            # Si no cabe todo, lo que suena (el primero) es lo último que se quita.
+            m["tarjeta"].prescindibles_grupo("reproductores", m["filas_rep"][:0:-1], 2)
         for f, d in zip(m["filas_rep"], lista):
             f.actualizar(d)
         m["reproductores"].setVisible(bool(lista))
@@ -4237,6 +4576,7 @@ class Monitor:
                 m["filas_vol"] += [FilaVolumen(self.mezclador, nombre, nombre) for nombre, _x, _x in apps]
                 for f in m["filas_vol"]:
                     m["caja_vol"].addWidget(f)
+                m["tarjeta"].prescindibles_grupo("volumen", m["filas_vol"][::-1], 1)
             m["filas_vol"][0].actualizar(*datos["general"])
             for f, (_x, vol, mute) in zip(m["filas_vol"][1:], apps):
                 f.actualizar(vol, mute)
