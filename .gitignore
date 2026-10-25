@@ -1,0 +1,10 @@
+# Zips y carpetas generadas por construir.sh
+dist/
+
+# Secretos (el Client Secret de Discord): nunca al repositorio
+secretos/
+secreto_discord.py
+
+__pycache__/
+*.pyc
+.venv/

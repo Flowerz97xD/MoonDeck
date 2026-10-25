@@ -1,0 +1,251 @@
+MOONDECK PARA LINUX (Pop!_OS / COSMIC)
+======================================
+
+Widgets de cristal que muestran en tiempo real: CPU (uso, uso por nucleo,
+frecuencia, temperatura, consumo), memoria, cada GPU (uso, temperatura, VRAM,
+consumo, reloj, ventilador), red, discos, los sensores que elijas
+(temperaturas, ventiladores, voltajes...), un widget multimedia para controlar
+la musica y el volumen de cada app, reloj, calendario, el tiempo, tu canal de
+voz de Discord, dispositivos de audio (altavoces, auriculares, microfono) y
+test de velocidad de internet. Temas, colores, fondos y bordes de neon a tu
+gusto desde la ventana de Configuracion.
+Idiomas: espanol, ingles, aleman, chino y ruso (menu > "Configuracion..." >
+General > Idioma; por defecto, el del sistema).
+Dos modos: widgets sueltos por el escritorio, o un panel a pantalla completa
+(ideal para un segundo monitor) que puedes organizar a tu gusto.
+
+
+REQUISITOS
+----------
+- Pop!_OS 24.04 con COSMIC (tambien vale Ubuntu 24.04 o parecidos; el efecto
+  cristal y la colocacion de los widgets necesitan un escritorio Wayland con
+  "layer-shell": COSMIC, KDE Plasma, Hyprland, Sway...).
+- Nada de administrador para usarlo. El instalador pide la contrasena solo
+  para instalar unos paquetes pequenos del sistema con apt.
+
+
+INSTALACION (1 minuto)
+----------------------
+1. Descomprime el zip donde quieras.
+2. Abre una terminal en esa carpeta (clic derecho > "Abrir en terminal") y
+   ejecuta:
+        ./instalar.sh
+   El instalador:
+   - pregunta el idioma (el del instalador y el de MoonDeck),
+   - instala con apt lo que falte (GTK, gtk-layer-shell, icono de bandeja...),
+   - copia la app a ~/.local/share/MoonDeck,
+   - la pone en el menu de aplicaciones como "MoonDeck",
+   - pregunta si quieres que arranque sola al iniciar sesion,
+   - y si quieres abrirla ya.
+   Despues puedes borrar el zip y la carpeta.
+
+Tu configuracion (posiciones, sensores...) queda en ~/.config/MoonDeck
+
+ACTUALIZAR A UNA VERSION NUEVA: menu > "Configuracion..." > General >
+"Buscar actualizaciones". Si hay una version nueva, "Actualizar" la descarga de
+github.com/blkshhh/MoonDeck y "Reiniciar MoonDeck" la abre. Tu configuracion
+se conserva, y "Volver a la anterior" deshace la actualizacion.
+(Tambien vale descomprimir el zip nuevo y ejecutar otra vez ./instalar.sh.)
+
+
+USO
+---
+Abre "MoonDeck" desde el menu de aplicaciones.
+
+Hay dos modos (se cambia desde el menu y se recuerda el ultimo usado):
+
+  MODO WIDGETS   cada widget es una tarjeta de cristal sobre el escritorio,
+                 por debajo de las ventanas (como el fondo de pantalla).
+                 Se reparten solos por columnas, cada uno con su altura y
+                 justo debajo del anterior. Si mueves alguno, se quedan donde
+                 los dejes (tambien al reiniciar).
+  MODO PANEL     una sola capa a pantalla completa en el monitor que elijas,
+                 con todos los widgets en cuadricula ocupando toda la pantalla.
+                 Tambien va por debajo de las ventanas. Ideal para el segundo
+                 monitor mientras juegas.
+
+  Los widgets y el panel se ven en TODOS los escritorios virtuales: son parte
+  del escritorio, como el fondo o la barra de COSMIC.
+
+  Menu ....................... clic derecho sobre un widget (o sobre el fondo
+                               del panel, o el icono de la bandeja)
+  Pasar a modo panel ......... menu > "Modo panel (pantalla completa) en..." >
+                               elige la pantalla
+  Volver a widgets ........... menu > "Volver a modo widgets"
+  Cambiar el panel de monitor  menu > "Mover el panel a..."
+  Sacar un widget del panel .. clic derecho sobre el > "Sacar del panel":
+                               queda en su propia ventana, SIEMPRE ENCIMA de
+                               todo (tambien de un juego a pantalla completa).
+                               Arrastrala donde quieras.
+  Devolverlo al panel ........ clic derecho sobre el > "Devolver al panel"
+  Personalizar el panel ...... menu > "Editar disposicion" (ver abajo)
+  Elegir sensores ............ menu > "Elegir sensores..." (ver abajo)
+  Ocultar/mostrar widgets .... menu > "Widgets visibles"
+  Mover un widget ............ arrastralo con el clic izquierdo (modo widgets
+                               o widgets sacados del panel)
+  Mostrar / ocultar todo ..... menu > "Mostrar / ocultar"
+  Recolocar en cuadricula .... menu > "Recolocar widgets en..." > elige la pantalla
+  Salir ...................... menu > "Salir", o Ctrl+Q con un widget pulsado
+  Quitar el titulo ........... clic derecho sobre el widget > "Mostrar titulo"
+  Opacidad de un widget ...... clic derecho sobre el > "Opacidad de este widget"
+                               ("Aplicar a todos los widgets" copia la de ese)
+
+En modo widgets, mientras no muevas ninguno, se recolocan solos cuando uno
+crece (p. ej. al empezar a sonar musica). En cuanto arrastras uno, todos se
+quedan donde estan, tambien al reiniciar. Para volver a la colocacion
+automatica: menu > "Recolocar widgets en...".
+Los widgets sacados del panel recuerdan su posicion.
+
+PERSONALIZAR EL PANEL
+  Clic derecho > "Editar disposicion (mover y redimensionar)". Se ve la
+  cuadricula y aparece una barra arriba:
+    - Arrastra un widget a CUALQUIER celda, aunque deje huecos. Si cae encima
+      de otro, ese otro se va al sitio que dejaste libre.
+    - Arrastra la esquina inferior derecha de un widget (la marca diagonal)
+      para que ocupe mas o menos celdas: p. ej. Multimedia de 2x2.
+    - Columnas - / + : cuantas columnas tiene la cuadricula.
+    - Filas - / +    : "auto" usa las justas; con un numero fijo, las filas
+                       son mas bajas y sobran celdas libres.
+    - Restablecer    : vuelve a la disposicion automatica.
+    - Listo (o Esc)  : termina de editar.
+  Tambien: clic derecho sobre un widget > "Tamano en la cuadricula" > Ancho/Alto.
+  Todo se guarda solo.
+
+SENSORES
+  Menu (o clic derecho sobre el widget Sensores) > "Elegir sensores...".
+  Salen TODOS los sensores que lee el equipo, agrupados por dispositivo y tipo:
+  temperaturas, ventiladores, voltajes, consumos, relojes, cargas... Hay un
+  buscador ("cpu", "voltaje", "fan", "nvme"...). Marca los que quieras ver
+  (hasta 40). "Por defecto" vuelve a la seleccion automatica (temperaturas y
+  ventiladores).
+  Si el widget es ancho, los sensores se reparten en varias columnas; si no
+  caben todos, pone "... y N mas": hazlo mas grande o elige menos.
+
+
+RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
+------------------------------------
+  Reloj ............ se adapta al tamano del widget o de la celda. Clic
+                     derecho sobre el: "Tipo de reloj" (Digital, Analogico,
+                     Minimalista o Reloj mundial), "Formato 24 horas",
+                     "Mostrar segundos" y "Ciudades" (hasta 8).
+  Calendario ....... el mes con hoy marcado; flechas para cambiar de mes y
+                     clic en el nombre del mes para volver a hoy. Clic derecho >
+                     "La semana empieza en": lunes o domingo.
+  Dispositivos de
+  audio ............ la salida y la entrada (microfono) en uso; "Cambiar"
+                     despliega las demas para elegir otra. Boton para
+                     silenciar el microfono predeterminado.
+  Test de velocidad  boton "Iniciar test": mide ping, bajada y subida en unos
+                     15 s contra los servidores de Cloudflare. Gasta datos como
+                     cualquier test (hasta ~500 MB en conexiones muy rapidas).
+                     Se guarda el ultimo resultado.
+
+
+MULTIMEDIA
+----------
+Arriba, lo que esta sonando en cada app (Spotify, Firefox, Chrome, VLC...):
+portada, cancion, artista, progreso y botones anterior / pausa / siguiente.
+Si suenan varias a la vez salen todas (hasta 3).
+Abajo, el mezclador: volumen general y de cada app con sonido, con boton de
+silencio. Es el mismo volumen que el de COSMIC (PipeWire).
+
+
+TIEMPO
+------
+El tiempo de tu ciudad: ahora (temperatura, sensacion, humedad, viento, salida
+y puesta del sol), las proximas horas y los proximos 6 dias con la
+probabilidad de lluvia. Datos de Open-Meteo (gratis, sin cuenta); se
+actualiza cada 15 minutos. Por defecto, Barbate (Cadiz), la tierra del creador.
+Clic derecho > "Cambiar ciudad..." (o Configuracion > Widgets) para buscar la
+tuya.
+
+
+DISCORD
+-------
+El canal de voz en el que estas: servidor, canal y quien hay (se ilumina en
+verde quien habla; iconos rojos si tiene el micro apagado o esta
+ensordecido). Junto a cada persona, un boton abre su volumen (0-200 %) y
+"Silenciar" solo para ti. Abajo: volumen de tu micro y de tu salida, y los
+botones Silenciar, Ensordecer y Salir. Clic derecho > "Entrar en un canal
+reciente" para volver a los ultimos 8 canales.
+
+Discord solo deja controlar la voz a aplicaciones registradas: hay que crear
+una (gratis, una sola vez, unos 3 minutos). La ventana "Conectar con
+Discord..." del widget explica los pasos, y hay una guia completa con
+capturas en:
+  https://github.com/blkshhh/MoonDeck/blob/main/docs/DISCORD.md
+Resumen:
+  1. discord.com/developers > "New Application" (el nombre da igual).
+  2. OAuth2: copia el Client ID y el Client Secret ("Reset Secret"), y en
+     Redirects anade  http://localhost  y guarda.
+  3. En el widget Discord: "Conectar con Discord..." y pega los dos datos.
+  4. Discord pedira "Autorizar": acepta. Solo la primera vez.
+Si un amigo te ha invitado como tester de su aplicacion y te ha pasado su
+MoonDeck, acepta la invitacion y deja el Client Secret vacio.
+Los datos se guardan solo en ~/.config/MoonDeck/discord.json.
+Funciona con el Discord oficial (tambien con Vencord) y con Vesktop.
+
+
+FPS
+---
+En Linux no hay widget de FPS: no existe una forma general de medir los FPS
+de cualquier juego desde fuera, como hace PresentMon en Windows. Para verlos
+usa MangoHud (sudo apt install mangohud; en Steam: propiedades del juego >
+opciones de lanzamiento: mangohud %command%).
+
+
+CONFIGURACION (TEMAS, COLORES, FONDOS...)
+-----------------------------------------
+Clic derecho en cualquier widget (o en el icono de la bandeja) >
+"Configuracion...". Todo se aplica al momento:
+
+  Tema ................. 19 temas de serie: Cristal oscuro, Cristal claro, Negro
+                         solido, Neon morado, Oceano, Atardecer, Cyberpunk,
+                         Synthwave, Ciberseguridad, Alerta roja, Tron,
+                         Vaporwave, tres pasteles (lavanda, melocoton y menta),
+                         Nord, Dracula, Bosque y Minimal. Ademas: color de
+                         acento, colores del texto, fuente y tamano de letra.
+                         "Exportar" / "Importar" guardan o cargan el tema en un
+                         archivo .json para compartirlo.
+  Widgets .............. la ciudad del tiempo, en que dia empieza la semana del
+                         calendario (lunes o domingo), el tipo de reloj y que
+                         widgets muestran su titulo.
+  Tarjetas (modo widgets y modo panel, por separado): color y opacidad del
+                         fondo, degradado (dos colores y direccion), desenfoque
+                         si/no, imagen de fondo con su opacidad, color, opacidad
+                         y grosor del borde, esquinas redondeadas, "Modo neon"
+                         (el borde brilla como un tubo de neon) y "Parpadeo"
+                         (el neon falla a ratos, como un tubo viejo).
+  Fondo del panel ...... color, opacidad e imagen para toda la pantalla.
+  Disposicion .......... guardar la disposicion actual del panel como la de
+                         "Restablecer" (o volver a la de fabrica), y guardar las
+                         posiciones actuales de los widgets como las de
+                         "Recolocar widgets".
+  General .............. idioma, abrir al iniciar sesion, ancho de los widgets,
+                         columnas al colocarlos y cada cuanto se actualizan.
+
+
+PROBLEMAS FRECUENTES
+--------------------
+- No sale ningun ventilador de la placa base: Linux no siempre carga el
+  driver de los sensores de la placa. Prueba:
+      sudo apt install lm-sensors && sudo sensors-detect
+  (responde a todo con Enter) y reinicia.
+
+- Los widgets salen como ventanas normales y no se pueden colocar:
+  falta gtk-layer-shell o el escritorio no lo soporta (p. ej. GNOME).
+  Vuelve a ejecutar ./instalar.sh.
+
+- No se abre nada: mira ~/.config/MoonDeck/error.log, o abrelo desde
+  una terminal para ver el error:
+      python3 ~/.local/share/MoonDeck/monitor.py
+
+- No se ve el icono en la bandeja: en COSMIC anade el applet "Area de
+  notificaciones" al panel. Sin el icono, el menu sigue en el clic derecho.
+
+
+DESINSTALAR
+-----------
+Menu de aplicaciones > "Desinstalar MoonDeck" (o ejecuta
+~/.local/share/MoonDeck/desinstalar.sh). Borra la app, sus accesos,
+el arranque automatico y la configuracion.

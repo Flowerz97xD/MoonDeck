@@ -1,0 +1,320 @@
+MOONDECK PARA WINDOWS 10/11
+===========================
+
+Widgets de cristal que muestran en tiempo real: CPU (uso, uso por nucleo,
+frecuencia, temperatura, consumo), memoria, cada GPU (uso, temperatura, VRAM,
+consumo, reloj, ventilador), FPS de los juegos, red, discos, los sensores que
+elijas (temperaturas, ventiladores, voltajes...), un widget multimedia para
+controlar la musica y el volumen de cada app, reloj, calendario, el tiempo,
+tu canal de voz de Discord, dispositivos de audio (altavoces, auriculares,
+microfono) y test de velocidad de internet. Temas, colores, fondos y bordes de
+neon a tu gusto desde la ventana de Configuracion.
+Idiomas: espanol, ingles, aleman, chino y ruso (menu > "Configuracion..." >
+General > Idioma; por defecto, el del sistema).
+Dos modos: widgets sueltos por el escritorio, o un panel a pantalla completa
+(ideal para un segundo monitor) que puedes organizar a tu gusto.
+
+
+REQUISITOS
+----------
+- Windows 10 u 11 de 64 bits (el efecto cristal se ve mejor en Windows 11).
+- Conexion a internet durante la instalacion.
+- Nada mas: el instalador pone Python y todo lo necesario.
+
+
+INSTALACION (unos 3-5 minutos)
+------------------------------
+1. Descomprime el zip donde quieras (clic derecho > "Extraer todo"). Por
+   ejemplo en Descargas: el instalador copia la app a su sitio, asi que
+   despues puedes borrar el zip y la carpeta.
+2. Doble clic en  instalar.bat
+   - Si Windows avisa ("Windows protegio su PC" o "Advertencia de
+     seguridad"): "Mas informacion" > "Ejecutar de todas formas", o "Ejecutar".
+     Sale porque el script no esta firmado.
+3. Sigue la ventana. El instalador:
+   - pregunta el idioma (el del instalador y el de MoonDeck),
+   - instala Python 3.12 si no tienes una version compatible,
+   - instala las librerias en una carpeta propia, sin tocar el resto del sistema,
+   - descarga LibreHardwareMonitor (lee los sensores) y PresentMon (mide FPS),
+   - pregunta si instalar el driver PawnIO: di que SI (temperaturas de CPU),
+   - crea accesos directos en el escritorio y en el menu Inicio,
+   - pregunta si quieres que arranque solo al iniciar sesion,
+   - y si quieres abrirlo ya.
+
+La app queda en  %LOCALAPPDATA%\Programs\MoonDeck
+Tu configuracion (posiciones, sensores...) en  %APPDATA%\MoonDeck
+
+ACTUALIZAR A UNA VERSION NUEVA: menu > "Configuracion..." > General >
+"Buscar actualizaciones". Si hay una version nueva, "Actualizar" la descarga de
+github.com/blkshhh/MoonDeck y "Reiniciar MoonDeck" la abre. Tu configuracion
+se conserva, y "Volver a la anterior" deshace la actualizacion.
+(Tambien vale descomprimir el zip nuevo y ejecutar otra vez instalar.bat.)
+
+
+USO
+---
+Abre "MoonDeck" desde el escritorio o el menu Inicio.
+Windows pedira permiso de administrador (UAC): acepta.
+
+Hay dos modos (se cambia desde el menu y se recuerda el ultimo usado):
+
+  MODO WIDGETS   cada widget es una ventanita de cristal sobre el escritorio.
+                 Se reparten solos por columnas, cada uno con su altura y
+                 justo debajo del anterior. Si mueves alguno, se quedan donde
+                 los dejes (tambien al reiniciar).
+  MODO PANEL     una sola ventana a pantalla completa en el monitor que elijas,
+                 con todos los widgets en cuadricula ocupando toda la pantalla.
+                 Se adapta a la resolucion (1080p, 1440p, ultrawide...).
+                 Ideal para el segundo monitor mientras juegas.
+
+  Menu ....................... clic derecho sobre un widget (o sobre el fondo
+                               del panel, o el icono de la bandeja)
+  Pasar a modo panel ......... menu > "Modo panel (pantalla completa) en..." >
+                               elige la pantalla
+  Volver a widgets ........... menu > "Volver a modo widgets"
+  Cambiar el panel de monitor  menu > "Mover el panel a..."
+  Sacar un widget del panel .. clic derecho sobre el > "Sacar del panel":
+                               queda en su propia ventana, SIEMPRE ENCIMA del
+                               resto (p. ej. los FPS sobre el juego en el otro
+                               monitor). Arrastrala donde quieras.
+  Devolverlo al panel ........ clic derecho sobre el > "Devolver al panel"
+  Personalizar el panel ...... menu > "Editar disposicion" (ver abajo)
+  Elegir sensores ............ menu > "Elegir sensores..." (ver abajo)
+  Ocultar/mostrar widgets .... menu > "Widgets visibles"
+  Mover un widget ............ arrastralo con el clic izquierdo (modo widgets
+                               o widgets sacados del panel)
+  Mostrar / ocultar todo ..... clic en el icono de la bandeja
+  Recolocar en cuadricula .... menu > "Recolocar widgets en..." > elige la pantalla
+  Salir ...................... menu > "Salir", o Ctrl+Q
+  Quitar el titulo ........... clic derecho sobre el widget > "Mostrar titulo"
+  Opacidad de un widget ...... clic derecho sobre el > "Opacidad de este widget"
+                               ("Aplicar a todos los widgets" copia la de ese)
+
+En modo widgets, mientras no muevas ninguno, se recolocan solos cuando uno
+crece (p. ej. al empezar a sonar musica). En cuanto arrastras uno, todos se
+quedan donde estan, tambien al reiniciar. Para volver a la colocacion
+automatica: menu > "Recolocar widgets en...".
+Los widgets sacados del panel recuerdan su posicion.
+
+PERSONALIZAR EL PANEL
+  Clic derecho > "Editar disposicion (mover y redimensionar)". Se ve la
+  cuadricula y aparece una barra arriba:
+    - Arrastra un widget a CUALQUIER celda, aunque deje huecos. Si cae encima
+      de otro, ese otro se va al sitio que dejaste libre.
+    - Arrastra la esquina inferior derecha de un widget (la marca diagonal)
+      para que ocupe mas o menos celdas: p. ej. Multimedia de 2x2.
+    - Columnas - / + : cuantas columnas tiene la cuadricula.
+    - Filas - / +    : "auto" usa las justas; con un numero fijo, las filas
+                       son mas bajas y sobran celdas libres.
+    - Restablecer    : vuelve a la disposicion automatica.
+    - Listo (o Esc)  : termina de editar.
+  Tambien: clic derecho sobre un widget > "Tamano en la cuadricula" > Ancho/Alto.
+  Todo se guarda solo.
+
+WIDGETS VISIBLES
+  Menu > "Widgets visibles": marca o desmarca cada widget (CPU, Memoria, GPU,
+  FPS, Red, Almacenamiento, Sensores, Multimedia). Tambien: clic derecho sobre
+  un widget > "Ocultar este widget".
+
+SENSORES
+  Menu (o clic derecho sobre el widget Sensores) > "Elegir sensores...".
+  Salen TODOS los sensores que lee el equipo, agrupados por dispositivo y tipo:
+  temperaturas, ventiladores, voltajes, consumos, relojes, cargas... Hay un
+  buscador ("cpu", "voltaje", "fan", "nvme"...). Marca los que quieras ver
+  (hasta 40). "Por defecto" vuelve a la seleccion automatica (temperaturas y
+  ventiladores que giran).
+  Si el widget es ancho, los sensores se reparten en varias columnas; si no
+  caben todos, pone "... y N mas": hazlo mas grande o elige menos.
+
+
+CONFIGURACION (TEMAS, COLORES, FONDOS...)
+-----------------------------------------
+Menu > "Configuracion...". Todo se aplica al momento:
+
+  Tema ................. 19 temas de serie: Cristal oscuro, Cristal claro, Negro
+                         solido, Neon morado, Oceano, Atardecer, Cyberpunk,
+                         Synthwave, Ciberseguridad, Alerta roja, Tron,
+                         Vaporwave, tres pasteles (lavanda, melocoton y menta),
+                         Nord, Dracula, Bosque y Minimal. Ademas: color de
+                         acento, colores del texto, fuente y tamano de letra.
+                         "Exportar" / "Importar" guardan o cargan el tema en un
+                         archivo .json para compartirlo.
+  Widgets .............. la ciudad del tiempo, en que dia empieza la semana del
+                         calendario (lunes o domingo), el tipo de reloj y que
+                         widgets muestran su titulo.
+  Tarjetas (modo widgets y modo panel, por separado): color y opacidad del
+                         fondo, degradado (dos colores y direccion), cristal
+                         acrilico si/no, imagen de fondo con su opacidad, color,
+                         opacidad y grosor del borde, esquinas redondeadas,
+                         "Modo neon" (el borde brilla como un tubo de neon) y
+                         "Parpadeo" (el neon falla a ratos, como un tubo viejo).
+  Fondo del panel ...... color, opacidad e imagen para toda la pantalla.
+  Disposicion .......... guardar la disposicion actual del panel como la de
+                         "Restablecer" (o volver a la de fabrica), y guardar las
+                         posiciones actuales de los widgets como las de
+                         "Recolocar widgets".
+  General .............. idioma, abrir al iniciar sesion, ancho de los widgets,
+                         columnas al colocarlos y cada cuanto se actualizan.
+
+
+TIEMPO
+------
+El tiempo de tu ciudad: ahora (temperatura, sensacion, humedad, viento, salida
+y puesta del sol), las proximas horas y los proximos 6 dias con la
+probabilidad de lluvia. Datos de Open-Meteo (gratis, sin cuenta); se actualiza
+cada 15 minutos. Por defecto, Barbate (Cadiz), la tierra del creador.
+Clic derecho > "Cambiar ciudad..." (o Configuracion > Widgets) para buscar la tuya.
+
+
+DISCORD
+-------
+El canal de voz en el que estas: servidor, canal y quien hay (aro verde en
+quien habla; iconos rojos si tiene el micro apagado o esta ensordecido). Junto
+a cada persona, un boton abre su volumen (0-200 %) y "Silenciar" solo para ti.
+Abajo: volumen de tu micro y de tu salida, y Silenciar, Ensordecer y Salir.
+Clic derecho > "Entrar en un canal reciente" (los ultimos 8).
+
+Discord solo deja controlar la voz a aplicaciones registradas: hay que crear
+una (gratis, una sola vez, unos 3 minutos). La ventana "Conectar con
+Discord..." del widget explica los pasos, y hay una guia completa con
+capturas en:
+  https://github.com/blkshhh/MoonDeck/blob/main/docs/DISCORD.md
+Resumen:
+  1. discord.com/developers > "New Application" (el nombre da igual).
+  2. OAuth2: copia el Client ID y el Client Secret ("Reset Secret"), y en
+     Redirects anade  http://localhost  y guarda.
+  3. En el widget Discord: "Conectar con Discord..." y pega los dos datos.
+  4. Discord pedira "Autorizar": acepta. Solo la primera vez.
+Si un amigo te ha invitado como tester de su aplicacion y te ha pasado su
+MoonDeck, acepta la invitacion y deja el Client Secret vacio.
+Los datos se guardan solo en %APPDATA%\MoonDeck\discord.json.
+Funciona con la app de escritorio de Discord (no con la web).
+
+
+RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
+------------------------------------
+  Reloj ............ se adapta al tamano del widget o de la celda. Clic
+                     derecho sobre el:
+                       - "Tipo de reloj": Digital, Analogico, Minimalista
+                         (solo la hora, enorme) o Reloj mundial.
+                       - "Formato 24 horas" y "Mostrar segundos".
+                       - "Ciudades": las del reloj mundial (hasta 8).
+  Calendario ....... el mes con hoy marcado; flechas para cambiar de mes y
+                     clic en el nombre del mes para volver a hoy. Clic derecho >
+                     "La semana empieza en": lunes o domingo.
+  Dispositivos de
+  audio ............ la salida y la entrada (microfono) en uso; "Cambiar"
+                     despliega las demas: clic en una para hacerla la
+                     predeterminada de Windows. Boton para silenciar el
+                     microfono: silencia
+                     todos los microfonos predeterminados de Windows (el de
+                     multimedia y el de comunicaciones, que usan Discord,
+                     Teams o los juegos, pueden ser distintos).
+  Test de velocidad  boton "Iniciar test": mide ping, bajada y subida en unos
+                     15 s contra los servidores de Cloudflare (los de
+                     speed.cloudflare.com). Gasta datos como cualquier test de
+                     velocidad (hasta ~500 MB en conexiones muy rapidas). Se
+                     guarda el ultimo resultado.
+  Si te sobran widgets, ocultalos en menu > "Widgets visibles".
+
+
+MULTIMEDIA
+----------
+Arriba, lo que esta sonando en cada app (Spotify, Chrome, Edge, Firefox,
+Reproductor multimedia...): portada, cancion, artista, progreso y botones
+anterior / pausa / siguiente. Si suenan varias a la vez salen todas (hasta 3),
+y se controla cada una por separado.
+Abajo, el mezclador: volumen general y de cada app con sonido (juego, Discord,
+navegador...), con boton de silencio. Es el mismo volumen que el mezclador de
+Windows.
+Nota: en el navegador, el control funciona con YouTube, Spotify Web, SoundCloud
+y la mayoria de webs de musica; alguna web puede no informar del progreso.
+
+
+FPS
+---
+El widget FPS mide la app que este en primer plano (el juego que estes jugando)
+con PresentMon, la herramienta de Intel que usan los programas de benchmark.
+Muestra:
+  - FPS ........ media del ultimo segundo
+  - 1% low ..... FPS del 1% de fotogramas mas lentos de los ultimos 10 s
+                 (si es mucho mas bajo que los FPS, el juego da tirones)
+  - frametime .. milisegundos por fotograma
+Debajo del numero aparece el nombre del programa que esta midiendo.
+Con 2 monitores: aunque hagas clic en el navegador, Discord, Spotify, Steam u
+OBS del otro monitor, sigue midiendo el juego mientras este abierto.
+Si no hay ningun juego abierto pone "Sin juegos ni apps 3D activos".
+Funciona con DirectX 9-12, Vulkan y OpenGL. Necesita administrador.
+
+
+
+POR QUE PIDE ADMINISTRADOR
+--------------------------
+Windows no deja leer las temperaturas de la CPU ni ciertos sensores sin acceso
+de bajo nivel. LibreHardwareMonitor lo consigue con el driver PawnIO (codigo
+abierto, firmado), y eso requiere ejecutar como administrador.
+
+Si prefieres no darle permisos: abre  iniciar-sin-admin.bat  en la carpeta
+de la app (%LOCALAPPDATA%\Programs\MoonDeck).
+Funcionan uso de CPU, memoria, red, discos y GPUs NVIDIA (via nvidia-smi),
+pero no las temperaturas de CPU, placa y discos, ni las GPUs AMD/Intel,
+ni los FPS.
+
+Si eliges arrancar al iniciar sesion, se crea una tarea programada que lo abre
+como administrador sin preguntar cada vez.
+
+
+PERSONALIZAR
+------------
+Abre monitor.py (en %LOCALAPPDATA%\Programs\MoonDeck) con el Bloc de
+notas; al principio estan los ajustes:
+
+  EFECTO = "acrilico"   pon "ninguno" si el cristal se ve mal o va lento
+  (los colores, fondos y la opacidad se cambian en menu > "Configuracion...")
+  INTERVALO = 1.0       segundos entre actualizaciones
+  COLUMNAS = 4          widgets por fila al recolocar
+  RECOLOCAR_AL_ABRIR = False  True = colocarlos siempre solos al abrir
+  MAX_REPRODUCTORES = 3       apps con musica que se muestran a la vez
+  MAX_APPS_VOLUMEN = 8        apps que salen en el mezclador
+
+
+PROBLEMAS FRECUENTES
+--------------------
+- No sale ninguna temperatura de CPU:
+  falta PawnIO o no se abrio como administrador. Vuelve a ejecutar
+  instalar.bat y di que SI a PawnIO, y abre el monitor con el acceso directo.
+  Nota: algunos anticheats (p. ej. FACEIT) bloquean PawnIO.
+
+- Algun widget dice que falta algo ("Falta lib\...", "Control multimedia no
+  disponible", "Mezclador no disponible"...): vuelve a ejecutar instalar.bat.
+
+- No sale ningun ventilador: por defecto solo salen los que giran y los de la
+  grafica (que en reposo pone "parado"). Mira en "Elegir sensores...". Si la
+  placa no informa de sus ventiladores, no apareceran.
+
+- El widget FPS no marca nada con un juego abierto:
+  haz clic en la ventana del juego (mide la app en primer plano). Algunos
+  anticheats impiden medir; tambien pasa con otros medidores de FPS.
+
+- No se abre nada / se cierra al instante:
+  pulsa Win+R, escribe  %APPDATA%\MoonDeck\error.log  y Enter: ahi esta
+  el error. Mandaselo a quien te paso la app. Tambien puedes abrir depurar.bat
+  (en la carpeta de la app) para verlo en una consola.
+
+- El efecto cristal se ve negro o raro:
+  comprueba Configuracion > Personalizacion > Colores > "Efectos de
+  transparencia" activado. Si sigue mal, pon EFECTO = "ninguno" en monitor.py.
+
+- La instalacion falla en "Instalando librerias": haz una captura de la
+  ventana y mandasela a quien te paso la app.
+
+
+DESINSTALAR
+-----------
+Menu Inicio > "MoonDeck" > "Desinstalar MoonDeck".
+Borra la app, sus accesos directos, el arranque automatico y la configuracion.
+Python y PawnIO quedan instalados; quitalos desde Configuracion > Aplicaciones
+si no los usas para nada mas.
+
+
+Creditos: LibreHardwareMonitor (MPL 2.0), PawnIO y PresentMon de Intel (MIT).
