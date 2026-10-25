@@ -2,6 +2,8 @@
 
 [English](README.md) · **Español**
 
+![MoonDeck en modo panel](docs/capturas/panel.jpg)
+
 Widgets de cristal para el escritorio, para **Linux (Pop!_OS / COSMIC)** y **Windows 10/11**.
 
 Muestran en tiempo real CPU, memoria, GPUs, red, discos, sensores (temperaturas, ventiladores, voltajes…), FPS (solo en Windows), música y volumen por app, reloj, calendario, el tiempo, el canal de voz de Discord, los dispositivos de audio y un test de velocidad.
@@ -17,6 +19,21 @@ Idiomas: español, inglés, alemán, chino y ruso (`comun/lang_*.py`; los textos
 Guía para conectar el widget de Discord: [docs/DISCORD.md](docs/DISCORD.md) (en inglés: [docs/DISCORD.en.md](docs/DISCORD.en.md)).
 
 Las instrucciones para el usuario están en `linux/LEEME.txt` y `windows/LEEME.txt` (en inglés: `README.txt`).
+
+## Capturas
+
+Hechas en Linux (COSMIC); la versión de Windows se ve igual.
+
+<table>
+<tr>
+<td><img src="docs/capturas/synthwave.jpg" alt="Synthwave"></td>
+<td><img src="docs/capturas/pastel.jpg" alt="Pastel lavanda"></td>
+</tr>
+<tr>
+<td><img src="docs/capturas/tron.jpg" alt="Tema oscuro con bordes de neón"></td>
+<td><img src="docs/capturas/settings.jpg" alt="Ventana de configuración"></td>
+</tr>
+</table>
 
 ## Instalar
 

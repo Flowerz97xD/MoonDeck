@@ -2,6 +2,8 @@
 
 **English** · [Español](README.es.md)
 
+![MoonDeck in panel mode](docs/capturas/panel.jpg)
+
 Glass desktop widgets for **Linux (Pop!_OS / COSMIC)** and **Windows 10/11**.
 
 They show in real time: CPU, memory, GPUs, network, disks, sensors (temperatures, fans, voltages…), FPS (Windows only), music and per-app volume, clock, calendar, weather, your Discord voice channel, audio devices and an internet speed test.
@@ -13,6 +15,21 @@ Two modes:
 Themes, colors, backgrounds and neon borders are changed from the Settings window.
 
 Languages: English, Spanish, German, Chinese and Russian.
+
+## Screenshots
+
+Taken on Linux (COSMIC); the Windows version looks the same.
+
+<table>
+<tr>
+<td><img src="docs/capturas/synthwave.jpg" alt="Synthwave"></td>
+<td><img src="docs/capturas/pastel.jpg" alt="Pastel lavender"></td>
+</tr>
+<tr>
+<td><img src="docs/capturas/tron.jpg" alt="Dark theme with neon borders"></td>
+<td><img src="docs/capturas/settings.jpg" alt="Settings window"></td>
+</tr>
+</table>
 
 ## Install
 
