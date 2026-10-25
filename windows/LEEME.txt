@@ -236,6 +236,23 @@ Nota: en el navegador, el control funciona con YouTube, Spotify Web, SoundCloud
 y la mayoria de webs de musica; alguna web puede no informar del progreso.
 
 
+JUEGOS
+------
+Un widget con tres minijuegos (llega oculto: activalo en menu > "Widgets
+visibles" > Juegos). Clic derecho > "Juego" para elegir y "Nueva partida".
+  Buscaminas ....... clic para abrir una casilla, clic derecho para poner o
+                     quitar una bandera, y clic en un numero con todas sus
+                     banderas para abrir las de alrededor. El primer clic nunca
+                     es una mina. El tablero se adapta al tamano del widget; se
+                     guarda el mejor tiempo de cada tamano.
+  2048 ............. flechas (o W A S D), o arrastra con el raton. La partida y
+                     el record se guardan aunque cierres la app.
+  Dinosaurio ....... el de Chrome: espacio, flecha arriba o clic para saltar
+                     (mantener = mas alto) y flecha abajo para agacharse.
+Para usar el teclado, haz clic antes en el juego. Para el menu del widget, haz
+clic derecho fuera del tablero (por ejemplo en el titulo).
+
+
 FPS
 ---
 El widget FPS mide la app que este en primer plano (el juego que estes jugando)
@@ -323,3 +340,5 @@ si no los usas para nada mas.
 
 
 Creditos: LibreHardwareMonitor (MPL 2.0), PawnIO y PresentMon de Intel (MIT).
+Juegos: 2048 de Gabriele Cirulli (MIT) y el dinosaurio de Chromium (BSD,
+(c) The Chromium Authors).

@@ -107,6 +107,8 @@ try:
     from velocidad import TestVelocidad
     import velocimetro
     import esferas
+    import juegos
+    import dino_sprite
 except Exception:
     _excepthook(*sys.exc_info())
     sys.exit(1)
@@ -350,6 +352,34 @@ class LienzoCairo:
         self._color(color)
         cr.fill()
 
+    _hojas = {}  # la hoja del dinosaurio ya teñida, por color
+
+    def sprite(self, sx, sy, sw, sh, dx, dy, dw, dh, tinta=None):
+        """Un trozo de la hoja del dinosaurio, escalado sin suavizar (pixel art)."""
+        clave = tuple(round(c, 3) for c in tinta[:3]) if tinta else None
+        if clave not in self._hojas:
+            cargador = GdkPixbuf.PixbufLoader()
+            cargador.write(dino_sprite.PNG)
+            cargador.close()
+            pb = cargador.get_pixbuf()
+            w, h, fila = pb.get_width(), pb.get_height(), pb.get_rowstride()
+            crudo = pb.get_pixels()
+            rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
+            datos = juegos.tinta_sprite(rgba, tinta)
+            pb = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(datos), GdkPixbuf.Colorspace.RGB, True, 8, w, h, w * 4)
+            self._hojas[clave] = Gdk.cairo_surface_create_from_pixbuf(pb, 1, None)
+        cr = self.cr
+        cr.save()
+        cr.rectangle(dx, dy, dw, dh)
+        cr.clip()
+        ex, ey = dw / sw, dh / sh
+        cr.translate(dx - sx * ex, dy - sy * ey)
+        cr.scale(ex, ey)
+        cr.set_source_surface(self._hojas[clave], 0, 0)
+        cr.get_source().set_filter(cairo.FILTER_NEAREST)
+        cr.paint()
+        cr.restore()
+
     def medir(self, texto, px, peso="normal"):
         return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso]).get_pixel_size()
 
@@ -525,6 +555,85 @@ class Velocimetro(Dibujo):
              "color": self.color, "progreso": self.progreso, "unidad": self.unidad}
         esferas.velocimetro(LienzoCairo(self, cr), paleta(), self.get_allocated_width(),
                             self.get_allocated_height(), e, self.estilo)
+
+
+class VistaJuego(Dibujo):
+    """El minijuego en marcha (juegos.py): le pasa el ratón y el teclado y lo redibuja
+    cuando lo pide (cada frame mientras se mueve algo, cada segundo con el cronómetro)."""
+
+    TECLAS = {Gdk.KEY_Left: "izquierda", Gdk.KEY_a: "izquierda", Gdk.KEY_Right: "derecha", Gdk.KEY_d: "derecha",
+              Gdk.KEY_Up: "arriba", Gdk.KEY_w: "arriba", Gdk.KEY_Down: "abajo", Gdk.KEY_s: "abajo",
+              Gdk.KEY_space: "espacio", Gdk.KEY_n: "n"}
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.poner_alto(80, 280)  # en una celda pequeña se dibuja en pequeño, sin cortar
+        self.set_vexpand(True)
+        self.set_can_focus(True)
+        self.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.KEY_RELEASE_MASK)
+        self._timer = None
+        self.connect("draw", self.dibujar)
+        self.connect("button-press-event", self._pulsar)
+        self.connect("button-release-event", self._soltar)
+        self.connect("key-press-event", lambda _w, ev: self._tecla(ev, True))
+        self.connect("key-release-event", lambda _w, ev: self._tecla(ev, False))
+        self.connect("map", lambda _w: self._programar())
+        cfg = app.config.setdefault("juegos", {})
+        self.poner(cfg.get("actual", "buscaminas"))
+
+    def poner(self, nombre):
+        cfg = self.app.config.setdefault("juegos", {})
+        cfg["actual"] = nombre
+        self.juego = juegos.crear(nombre, cfg.setdefault(nombre, {}), self.app.guardar_config)
+        self.queue_draw()
+        self._programar()
+
+    def nueva(self):
+        self.juego.nueva()
+        self.queue_draw()
+        self._programar()
+
+    def _programar(self):
+        ms = self.juego.siguiente_frame()
+        if ms and self._timer is None and self.get_mapped():
+            self._timer = GLib.timeout_add(ms, self._frame)
+
+    def _frame(self):
+        self._timer = None
+        self.queue_draw()
+        self._programar()
+        return False
+
+    def _pulsar(self, _w, ev):
+        tarjeta = self.get_ancestor(Tarjeta)
+        if tarjeta and tarjeta.en_edicion():
+            return False
+        if ev.type != Gdk.EventType.BUTTON_PRESS:
+            return ev.button == 1  # los dobles clics llegan además como un evento aparte
+        if ev.button == 1:
+            self.grab_focus()  # para las flechas y el espacio
+        usado = self.juego.pulsar(ev.x, ev.y, ev.button)
+        self.queue_draw()
+        self._programar()
+        return usado or ev.button == 1  # el clic derecho que no usa el juego abre el menú
+
+    def _soltar(self, _w, ev):
+        usado = self.juego.soltar(ev.x, ev.y, ev.button)
+        self.queue_draw()
+        self._programar()
+        return usado
+
+    def _tecla(self, ev, pulsada):
+        nombre = self.TECLAS.get(Gdk.keyval_to_lower(ev.keyval))
+        if nombre and self.juego.tecla(nombre, pulsada):
+            self.queue_draw()
+            self._programar()
+            return True
+        return False
+
+    def dibujar(self, _w, cr):
+        self.juego.dibujar(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height())
 
 
 class BarrasNucleos(Dibujo):
@@ -2577,8 +2686,17 @@ class VentanaPanel(VentanaCristal):
                 {(f + i, c + j) for i in range(h) for j in range(w)} & ocupado)
 
         resultado = {}
-        orden = sorted(pos, key=lambda k: (k != primero, pos[k][0], pos[k][1]))
+        # Los que no tienen sitio (None) van los últimos, al primer hueco libre.
+        orden = sorted(pos, key=lambda k: (pos[k] is None, k != primero, *(pos[k] or (0, 0))[:2]))
         for k in orden:
+            if pos[k] is None:
+                tam = next(((h, w) for h, w in ((2, 2), (1, 2), (1, 1)) if w <= self.cols and any(
+                    libre(fi, ci, h, w) for fi in range(self.filas or 1) for ci in range(self.cols - w + 1))), (1, 1))
+                f, c = next((fi, ci) for fi in range(10000) for ci in range(self.cols - tam[1] + 1)
+                            if libre(fi, ci, *tam))
+                ocupado |= {(f + i, c + j) for i in range(tam[0]) for j in range(tam[1])}
+                resultado[k] = (f, c, *tam)
+                continue
             f, c, h, w = pos[k]
             w = max(1, min(w, self.cols))
             h = max(1, min(h, self.MAX_ALTO))
@@ -2600,8 +2718,7 @@ class VentanaPanel(VentanaCristal):
         guardadas = g["pos"]
         # Los que no tienen sitio guardado (una GPU nueva, un widget que se vuelve a
         # mostrar) van al final, al primer hueco libre.
-        pos = {t.clave: tuple(guardadas[t.clave]) if t.clave in guardadas else (10000, 0, 1, 1)
-               for t in self.tarjetas}
+        pos = {t.clave: tuple(guardadas[t.clave]) if t.clave in guardadas else None for t in self.tarjetas}
         self.celdas = self.normalizar(pos)
         usadas = max((f + h for f, _, h, _ in self.celdas.values()), default=1)
         self.filas = max(usadas, g["filas"] or 0, 1)
@@ -3325,6 +3442,10 @@ class Monitor:
         log("GPUs:", [g["name"] for g in first["gpus"]], "| temperaturas:", len(first["temps"]),
             "| ventiladores:", len(first["fans"]))
         self.config = self.cargar_config()
+        if not self.config.get("juegos_visto"):
+            # El widget de juegos llega oculto (también al actualizar): se activa en "Widgets visibles".
+            self.config.setdefault("ocultos", []).append("juegos")
+            self.config["juegos_visto"] = True
         idioma.poner(self.config.get("idioma") or idioma.detectar())
         global ANCHO, COLUMNAS, INTERVALO
         ANCHO = int(self.config.get("ancho", ANCHO))
@@ -3590,6 +3711,10 @@ class Monitor:
         self.vel_estado.set_xalign(0.5)
         self.vel_boton = c.add_w(boton_texto("Iniciar test", "principal"))
         self.vel_boton.connect("clicked", lambda _b: self.iniciar_test())
+
+        # Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (se elige con el clic derecho).
+        c = self.tarjeta("juegos", "Juegos")
+        self.juego_vista = c.add_w(VistaJuego(self), expand=True)
 
     # --- sensores ------------------------------------------------------------
 
@@ -4003,6 +4128,12 @@ class Monitor:
             menu.append(Gtk.SeparatorMenuItem())
         if tarjeta.clave == "discord":
             self.menu_discord(menu)
+        if tarjeta.clave == "juegos":
+            sub = self.submenu(menu, "Juego")
+            for clave, nombre in juegos.JUEGOS:
+                self.item(sub, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
+            self.item(menu, "Nueva partida", self.juego_vista.nueva)
+            menu.append(Gtk.SeparatorMenuItem())
         if tarjeta.clave == "velocidad":
             sub = self.submenu(menu, "Estilo del velocímetro")
             for clave, nombre in esferas.ESTILOS_VELOCIMETRO:

@@ -76,7 +76,7 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
 try:
     from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QGuiApplication,
-                               QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF)
+                               QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
                                    QFileDialog, QFontComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
@@ -88,6 +88,8 @@ try:
     from velocidad import TestVelocidad
     import velocimetro
     import esferas
+    import juegos
+    import dino_sprite
     from sensores import ES_WINDOWS, Sampler
     from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
@@ -530,6 +532,23 @@ class LienzoQt:
         self.p.setBrush(color_qt(color))
         self.p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in puntos]))
 
+    _hojas = {}  # la hoja del dinosaurio ya teñida, por color
+
+    def sprite(self, sx, sy, sw, sh, dx, dy, dw, dh, tinta=None):
+        """Un trozo de la hoja del dinosaurio, escalado sin suavizar (pixel art)."""
+        clave = tuple(round(c, 3) for c in tinta[:3]) if tinta else None
+        if clave not in self._hojas:
+            img = QImage.fromData(dino_sprite.PNG).convertToFormat(QImage.Format_RGBA8888)
+            w, h, fila = img.width(), img.height(), img.bytesPerLine()
+            crudo = bytes(img.constBits())
+            rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
+            datos = juegos.tinta_sprite(rgba, tinta)
+            self._hojas[clave] = QPixmap.fromImage(QImage(datos, w, h, w * 4, QImage.Format_RGBA8888).copy())
+        self.p.save()
+        self.p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+        self.p.drawPixmap(QRectF(dx, dy, dw, dh), self._hojas[clave], QRectF(sx, sy, sw, sh))
+        self.p.restore()
+
     def _fuente(self, px, peso):
         clave = (round(px), peso)
         if clave not in self.fuentes:
@@ -549,6 +568,107 @@ class LienzoQt:
         self.p.setFont(f)
         self.p.setPen(color_qt(color))
         self.p.drawText(QRectF(x + (w - tw) * h_al, y + (h - th) * v_al, tw, th), Qt.AlignCenter, texto)
+
+
+class VistaJuego(QWidget):
+    """El minijuego en marcha (juegos.py): le pasa el ratón y el teclado y lo redibuja
+    cuando lo pide (cada frame mientras se mueve algo, cada segundo con el cronómetro)."""
+
+    TECLAS = {Qt.Key_Left: "izquierda", Qt.Key_A: "izquierda", Qt.Key_Right: "derecha", Qt.Key_D: "derecha",
+              Qt.Key_Up: "arriba", Qt.Key_W: "arriba", Qt.Key_Down: "abajo", Qt.Key_S: "abajo",
+              Qt.Key_Space: "espacio", Qt.Key_N: "n"}
+    BOTONES = {Qt.LeftButton: 1, Qt.MiddleButton: 2, Qt.RightButton: 3}
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.setMinimumHeight(80)  # en una celda pequeña se dibuja en pequeño, sin cortar
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setFocusPolicy(Qt.ClickFocus)  # para las flechas y el espacio
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._frame)
+        cfg = app.config.setdefault("juegos", {})
+        self.poner(cfg.get("actual", "buscaminas"))
+
+    def sizeHint(self):
+        return QSize(ANCHO - 32, 280)
+
+    def poner(self, nombre):
+        cfg = self.app.config.setdefault("juegos", {})
+        cfg["actual"] = nombre
+        self.juego = juegos.crear(nombre, cfg.setdefault(nombre, {}), self.app.guardar_config)
+        self.update()
+        self._programar()
+
+    def nueva(self):
+        self.juego.nueva()
+        self.update()
+        self._programar()
+
+    def _programar(self):
+        ms = self.juego.siguiente_frame()
+        if ms and not self.timer.isActive() and self.isVisible():
+            self.timer.start(ms)
+
+    def _frame(self):
+        self.update()
+        self._programar()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._programar()
+
+    def _tarjeta(self):
+        w = self.parentWidget()
+        while w and not isinstance(w, Tarjeta):
+            w = w.parentWidget()
+        return w
+
+    def mousePressEvent(self, e):
+        tarjeta = self._tarjeta()
+        boton = self.BOTONES.get(e.button())
+        if not boton or (tarjeta and tarjeta.en_edicion()):
+            e.ignore()
+            return
+        pos = e.position()
+        usado = self.juego.pulsar(pos.x(), pos.y(), boton)
+        self.update()
+        self._programar()
+        if not (usado or boton == 1):
+            e.ignore()  # el clic derecho que no usa el juego abre el menú de la tarjeta
+
+    def mouseDoubleClickEvent(self, e):
+        self.mousePressEvent(e)  # en Qt el segundo clic rápido llega como doble clic
+
+    def mouseReleaseEvent(self, e):
+        boton = self.BOTONES.get(e.button())
+        pos = e.position()
+        if not boton or not self.juego.soltar(pos.x(), pos.y(), boton):
+            e.ignore()
+        self.update()
+        self._programar()
+
+    def _tecla(self, e, pulsada):
+        nombre = self.TECLAS.get(e.key())
+        if e.isAutoRepeat() and nombre in ("espacio", "arriba", "abajo"):
+            return  # mantener pulsado no repite el salto
+        if nombre and self.juego.tecla(nombre, pulsada):
+            self.update()
+            self._programar()
+        else:
+            e.ignore()
+
+    def keyPressEvent(self, e):
+        self._tecla(e, True)
+
+    def keyReleaseEvent(self, e):
+        self._tecla(e, False)
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        self.juego.dibujar(LienzoQt(self, p), paleta(), self.width(), self.height())
 
 
 class BarraProgreso(QWidget):
@@ -1463,7 +1583,7 @@ class Tarjeta(QWidget):
         el texto de abajo. Las gráficas encogen antes de quitar nada."""
         # La primera gráfica crece si la tarjeta es más alta que su contenido
         # (filas de la misma altura en modo widgets, cuadrícula en modo panel).
-        estirar = isinstance(w, (Grafica, Velocimetro)) and not self._estira
+        estirar = isinstance(w, (Grafica, Velocimetro, VistaJuego)) and not self._estira
         self._estira = self._estira or estirar
         self.caja.addWidget(w, 1 if estirar else 0)
         if prescindible:
@@ -2009,8 +2129,17 @@ class VentanaPanel(QWidget):
                 {(f + i, c + j) for i in range(h) for j in range(w)} & ocupado)
 
         resultado = {}
-        orden = sorted(pos, key=lambda k: (k != primero, pos[k][0], pos[k][1]))
+        # Los que no tienen sitio (None) van los últimos, al primer hueco libre.
+        orden = sorted(pos, key=lambda k: (pos[k] is None, k != primero, *(pos[k] or (0, 0))[:2]))
         for k in orden:
+            if pos[k] is None:
+                tam = next(((h, w) for h, w in ((2, 2), (1, 2), (1, 1)) if w <= self.cols and any(
+                    libre(fi, ci, h, w) for fi in range(self.filas or 1) for ci in range(self.cols - w + 1))), (1, 1))
+                f, c = next((fi, ci) for fi in range(10000) for ci in range(self.cols - tam[1] + 1)
+                            if libre(fi, ci, *tam))
+                ocupado |= {(f + i, c + j) for i in range(tam[0]) for j in range(tam[1])}
+                resultado[k] = (f, c, *tam)
+                continue
             f, c, h, w = pos[k]
             w = max(1, min(w, self.cols))
             h = max(1, min(h, self.MAX_ALTO))
@@ -2032,8 +2161,7 @@ class VentanaPanel(QWidget):
         guardadas = g["pos"]
         # Los que no tienen sitio guardado (una GPU nueva, un widget que se vuelve a
         # mostrar) van al final, al primer hueco libre.
-        pos = {t.clave: tuple(guardadas[t.clave]) if t.clave in guardadas else (10000, 0, 1, 1)
-               for t in self.tarjetas}
+        pos = {t.clave: tuple(guardadas[t.clave]) if t.clave in guardadas else None for t in self.tarjetas}
         self.celdas = self.normalizar(pos)
         usadas = max((f + h for f, _, h, _ in self.celdas.values()), default=1)
         self.filas = max(usadas, g["filas"] or 0, 1)
@@ -3280,6 +3408,10 @@ class Monitor:
         log("GPUs:", [g["name"] for g in first["gpus"]], "| temperaturas:", len(first["temps"]),
             "| ventiladores:", len(first["fans"]))
         self.config = self.cargar_config()
+        if not self.config.get("juegos_visto"):
+            # El widget de juegos llega oculto (también al actualizar): se activa en "Widgets visibles".
+            self.config.setdefault("ocultos", []).append("juegos")
+            self.config["juegos_visto"] = True
         global ANCHO, COLUMNAS, INTERVALO
         ANCHO = int(self.config.get("ancho", ANCHO))
         COLUMNAS = int(self.config.get("columnas", COLUMNAS))
@@ -3632,6 +3764,12 @@ class Monitor:
         self.vel_boton.setCursor(Qt.PointingHandCursor)
         self.vel_boton.clicked.connect(self.iniciar_test)
         c.add(self.vel_boton)
+
+        # Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (se elige con el clic derecho).
+        c = self.tarjeta("juegos", "Juegos")
+        self.juego_vista = VistaJuego(self)
+        c.add(self.juego_vista)
+        c._estira = True
         self.actualizar_velocidad()
 
         for t in self.tarjetas:
@@ -3968,6 +4106,14 @@ class Monitor:
                 a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
                 a.setCheckable(True)
                 a.setChecked(self.primer_dia() == dia)
+            menu.addSeparator()
+        if tarjeta.clave == "juegos":
+            sub = menu.addMenu(_("Juego"))
+            for clave, nombre in juegos.JUEGOS:
+                a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.juego_vista.poner(c))
+                a.setCheckable(True)
+                a.setChecked(self.juego_vista.juego.nombre == clave)
+            menu.addAction(_("Nueva partida"), self.juego_vista.nueva)
             menu.addSeparator()
         if tarjeta.clave == "velocidad":
             sub = menu.addMenu(_("Estilo del velocímetro"))

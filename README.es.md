@@ -6,7 +6,7 @@
 
 Widgets de cristal para el escritorio, para **Linux (Pop!_OS / COSMIC)** y **Windows 10/11**.
 
-Muestran en tiempo real CPU, memoria, GPUs, red, discos, sensores (temperaturas, ventiladores, voltajes…), FPS (solo en Windows), música y volumen por app, reloj, calendario, el tiempo, el canal de voz de Discord, los dispositivos de audio y un test de velocidad.
+Muestran en tiempo real CPU, memoria, GPUs, red, discos, sensores (temperaturas, ventiladores, voltajes…), FPS (solo en Windows), música y volumen por app, reloj, calendario, el tiempo, el canal de voz de Discord, los dispositivos de audio, un test de velocidad y tres minijuegos (Buscaminas, 2048 y el dinosaurio de Chrome).
 
 Hay dos modos:
 - **Widgets:** tarjetas sueltas por el escritorio.
@@ -77,3 +77,5 @@ En los dos casos, la configuración se guarda en `~/.config/MoonDeck` (Linux) o 
 ## Licencia
 
 MIT. Usa LibreHardwareMonitor (MPL 2.0), PawnIO y PresentMon de Intel (MIT).
+
+Los juegos son una adaptación de [2048](https://github.com/gabrielecirulli/2048) de Gabriele Cirulli (MIT) y del juego del dinosaurio de Chromium (BSD de 3 cláusulas, © The Chromium Authors; los dibujos están en `comun/dino_sprite.py`, sacados de [wayou/t-rex-runner](https://github.com/wayou/t-rex-runner)).

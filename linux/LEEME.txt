@@ -190,6 +190,23 @@ Los datos se guardan solo en ~/.config/MoonDeck/discord.json.
 Funciona con el Discord oficial (tambien con Vencord) y con Vesktop.
 
 
+JUEGOS
+------
+Un widget con tres minijuegos (llega oculto: activalo en menu > "Widgets
+visibles" > Juegos). Clic derecho > "Juego" para elegir y "Nueva partida".
+  Buscaminas ....... clic para abrir una casilla, clic derecho para poner o
+                     quitar una bandera, y clic en un numero con todas sus
+                     banderas para abrir las de alrededor. El primer clic nunca
+                     es una mina. El tablero se adapta al tamano del widget; se
+                     guarda el mejor tiempo de cada tamano.
+  2048 ............. flechas (o W A S D), o arrastra con el raton. La partida y
+                     el record se guardan aunque cierres la app.
+  Dinosaurio ....... el de Chrome: espacio, flecha arriba o clic para saltar
+                     (mantener = mas alto) y flecha abajo para agacharse.
+Para usar el teclado, haz clic antes en el juego. Para el menu del widget, haz
+clic derecho fuera del tablero (por ejemplo en el titulo).
+
+
 FPS
 ---
 En Linux no hay widget de FPS: no existe una forma general de medir los FPS

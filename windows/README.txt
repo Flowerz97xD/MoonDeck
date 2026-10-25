@@ -233,6 +233,23 @@ Note: in the browser, control works with YouTube, Spotify Web, SoundCloud and
 most music websites; some websites may not report the progress.
 
 
+GAMES
+-----
+A widget with three mini-games (it starts hidden: turn it on in menu > "Visible
+widgets" > Games). Right-click > "Game" to choose and "New game".
+  Minesweeper ...... click to open a cell, right-click to place or remove a
+                     flag, and click a number with all its flags to open the
+                     cells around it. The first click is never a mine. The board
+                     adapts to the size of the widget; the best time of each
+                     size is saved.
+  2048 ............. arrow keys (or W A S D), or drag with the mouse. The game
+                     and the record are kept even if you close the app.
+  Dinosaur ......... Chrome's: space, up arrow or click to jump (hold = higher)
+                     and down arrow to duck.
+To use the keyboard, click the game first. For the widget menu, right-click
+outside the board (for example on the title).
+
+
 FPS
 ---
 The FPS widget measures the app in the foreground (the game you are playing)
@@ -317,3 +334,5 @@ don't use them for anything else.
 
 
 Credits: LibreHardwareMonitor (MPL 2.0), PawnIO and Intel's PresentMon (MIT).
+Games: 2048 by Gabriele Cirulli (MIT) and the Chromium dinosaur (BSD,
+(c) The Chromium Authors).
