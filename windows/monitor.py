@@ -74,11 +74,11 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
     bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else os.geteuid() == 0)
 
 try:
-    from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
+    from PySide6.QtCore import QEvent, QFileInfo, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QGuiApplication,
                                QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
-                                   QFileDialog, QFontComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
+                                   QFileDialog, QFileIconProvider, QFontComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
                                    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider, QSpinBox,
                                    QStackedWidget, QStyle, QSystemTrayIcon, QToolButton, QTreeWidget,
@@ -89,9 +89,10 @@ try:
     import velocimetro
     import esferas
     import juegos
+    import lanzador
     import dino_sprite
     from sensores import ES_WINDOWS, Sampler
-    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord
+    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord, abrir_discord
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import tema as temas
     import idioma
@@ -1003,6 +1004,10 @@ CIUDADES = (  # reloj mundial: (nombre, zona horaria)
 )
 ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
                  ("minimal", "Minimalista"), ("mundial", "Reloj mundial")) + esferas.ESTILOS_NUEVOS
+# al_abrir: qué hacer al abrir Discord desde el widget ("nada", "ultimo" o "gente").
+# servidores: ids de los servidores cuyos canales de voz se muestran en el widget.
+DISCORD_POR_DEFECTO = {"al_abrir": "nada", "servidores": []}
+
 RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
@@ -2561,6 +2566,185 @@ class PronosticoDias(QWidget):
             p.drawRoundedRect(QRectF(x1, by, max(x2 - x1, 4), 4), 2, 2)
 
 
+class VistaApps(QWidget):
+    """Lanzador: los iconos de las apps que elige el usuario; un clic las abre. Con el clic
+    derecho sobre un icono, el menú de la tarjeta trae quitarlo o moverlo."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.encima = None        # icono bajo el ratón
+        self.menu_indice = None   # icono sobre el que se abrió el menú
+        self._iconos = {}         # (id, color, escala) -> QPixmap
+        self._alto = None
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFixedHeight(lanzador.TAM)
+
+    def apps(self):
+        return self.app.config.setdefault("apps", [])
+
+    def cambiado(self):
+        self.app.guardar_config()
+        self._ajustar()
+        self.update()
+
+    def _ajustar(self):
+        _pos, alto = lanzador.rejilla(len(self.apps()), self.width())
+        alto = max(lanzador.TAM, alto)
+        if alto != self._alto:
+            self._alto = alto
+            self.setFixedHeight(alto)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._ajustar()
+
+    def _indice(self, pos):
+        rejilla, _alto = lanzador.rejilla(len(self.apps()), self.width())
+        return next((i for i, (ix, iy) in enumerate(rejilla)
+                     if ix <= pos.x() < ix + lanzador.TAM and iy <= pos.y() < iy + lanzador.TAM), None)
+
+    def _poner_encima(self, i):
+        if i != self.encima:
+            self.encima = i
+            self.setCursor(Qt.PointingHandCursor if i is not None else Qt.ArrowCursor)
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        self._poner_encima(self._indice(e.position()))
+        e.ignore()
+
+    def leaveEvent(self, e):
+        self._poner_encima(None)
+
+    def _tarjeta(self):
+        w = self.parentWidget()
+        while w and not isinstance(w, Tarjeta):
+            w = w.parentWidget()
+        return w
+
+    def mousePressEvent(self, e):
+        tarjeta = self._tarjeta()
+        i = self._indice(e.position())
+        if tarjeta and tarjeta.en_edicion():
+            e.ignore()
+        elif e.button() == Qt.RightButton:
+            self.menu_indice = i
+            e.ignore()  # el menú de la tarjeta
+        elif e.button() == Qt.LeftButton and i is not None:
+            self.abrir(self.apps()[i])
+        else:
+            e.ignore()
+
+    def abrir(self, a):
+        try:
+            os.startfile(a["id"])
+        except OSError as e:
+            print("No se pudo abrir", a["id"], e, file=sys.stderr)
+
+    def _icono(self, a, color):
+        escala = self.devicePixelRatioF()
+        clave = (a["id"], color, escala)
+        if clave not in self._iconos:
+            lado = round(lanzador.TAM * escala)
+            pm = QFileIconProvider().icon(QFileInfo(a["id"])).pixmap(lado, lado)
+            if not pm.isNull() and (pm.width() != lado or pm.height() != lado):
+                pm = pm.scaled(lado, lado, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            if not pm.isNull() and color:
+                img = pm.toImage().convertToFormat(QImage.Format_RGBA8888)
+                w, h, fila = img.width(), img.height(), img.bytesPerLine()
+                crudo = bytes(img.constBits())
+                rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
+                datos = lanzador.tenir_icono(rgba, color)
+                pm = QPixmap.fromImage(QImage(datos, w, h, w * 4, QImage.Format_RGBA8888).copy())
+            pm.setDevicePixelRatio(escala)
+            self._iconos[clave] = None if pm.isNull() else pm
+        return self._iconos[clave]
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        apps = self.apps()
+        if not apps:
+            p.setPen(QColor(C_SEC))
+            f = QFont(self.font())
+            f.setPixelSize(round(12 * ESCALA))
+            p.setFont(f)
+            p.drawText(self.rect(), Qt.AlignCenter, _("Clic derecho > Añadir aplicación…"))
+            return
+        modo = self.app.config.get("apps_color", "original")
+        color = {"acento": rgb(acento()), "texto": rgb(QColor(C_TEXTO))}.get(modo)
+        rejilla, _alto = lanzador.rejilla(len(apps), self.width())
+        t = lanzador.TAM
+        for i, (a, (x, y)) in enumerate(zip(apps, rejilla)):
+            if i == self.encima:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(*TENUE, 36))
+                p.drawRoundedRect(QRectF(x - 3, y - 3, t + 6, t + 6), 9, 9)
+            pm = self._icono(a, color)
+            if pm:
+                p.drawPixmap(QPointF(x, y), pm)
+
+
+class SelectorApps(QDialog):
+    """Elegir apps del menú Inicio (o cualquier .exe) para el lanzador."""
+
+    def __init__(self, ya, padre=None):
+        super().__init__(padre)
+        self.setWindowTitle(_("Añadir aplicación"))
+        self.setStyleSheet(SelectorSensores.ESTILO + "QListWidget { background: #20232b; color: #e6e9ef; "
+                           "border: 1px solid #3a3f4b; border-radius: 6px; } QListWidget::item { padding: 4px; }")
+        self.resize(440, 540)
+        self.extra = []
+        caja = QVBoxLayout(self)
+        self.buscar = QLineEdit()
+        self.buscar.setPlaceholderText(_("Buscar…"))
+        self.buscar.textChanged.connect(self.filtrar)
+        caja.addWidget(self.buscar)
+        self.lista = QListWidget()
+        self.lista.setSelectionMode(QListWidget.ExtendedSelection)
+        self.lista.setIconSize(QSize(24, 24))
+        self.lista.itemDoubleClicked.connect(lambda _i: self.accept())
+        iconos = QFileIconProvider()
+        for a in lanzador.apps_windows():
+            if a["id"] in ya:
+                continue
+            item = QListWidgetItem(iconos.icon(QFileInfo(a["id"])), a["nombre"])
+            item.setData(Qt.UserRole, a)
+            self.lista.addItem(item)
+        caja.addWidget(self.lista, 1)
+        botones = QHBoxLayout()
+        exe = QPushButton(_("Elegir un programa (.exe)…"))
+        exe.clicked.connect(self.elegir_exe)
+        botones.addWidget(exe)
+        botones.addStretch(1)
+        for texto, fn, principal in ((_("Cancelar"), self.reject, False), (_("Añadir"), self.accept, True)):
+            b = QPushButton(texto)
+            b.clicked.connect(fn)
+            if principal:
+                b.setProperty("estilo", "principal")
+                b.setDefault(True)
+            botones.addWidget(b)
+        caja.addLayout(botones)
+
+    def filtrar(self, texto):
+        for i in range(self.lista.count()):
+            item = self.lista.item(i)
+            item.setHidden(texto.lower() not in item.text().lower())
+
+    def elegir_exe(self):
+        ruta, _x = QFileDialog.getOpenFileName(self, _("Elegir un programa (.exe)…"), os.environ.get("ProgramFiles", ""),
+                                               _("Programas (*.exe)"))
+        if ruta:
+            ruta = os.path.normpath(ruta)
+            self.extra.append({"id": ruta, "nombre": os.path.splitext(os.path.basename(ruta))[0]})
+            self.accept()
+
+    def elegidas(self):
+        return [i.data(Qt.UserRole) for i in self.lista.selectedItems()] + self.extra
+
+
 class DialogoCiudad(QDialog):
     """Buscar y elegir la ciudad del widget del tiempo."""
 
@@ -3178,6 +3362,35 @@ class VentanaConfig(QWidget):
         estilo.currentIndexChanged.connect(lambda i: app.cambiar_velocimetro(estilo.itemData(i)))
         self.fila(lista, "Estilo del velocímetro", estilo)
 
+        lista = self.grupo(caja, "Discord")
+        o = app.config["discord"]
+        al_abrir = QComboBox()
+        for clave, nombre in (("nada", "Solo mostrar los canales"), ("ultimo", "Entrar en el último canal"),
+                              ("gente", "Entrar donde haya más gente")):
+            al_abrir.addItem(_(nombre), clave)
+        al_abrir.setCurrentIndex(max(0, al_abrir.findData(o["al_abrir"])))
+        al_abrir.currentIndexChanged.connect(lambda i: app.cambiar_discord(al_abrir=al_abrir.itemData(i)))
+        self.fila(lista, "Al abrir Discord desde el widget", al_abrir)
+        servidores = app.discord.instantanea()["servidores"]
+        lista = self.grupo(caja, "Tu servidor de Discord",
+                           "Sus canales de voz salen en el widget cuando no estás en ninguno; pulsa uno para entrar.")
+        if not servidores:
+            self.fila(lista, "Abre Discord para ver tus servidores", QLabel())
+        for g in servidores:
+            ch = QCheckBox()
+            ch.setChecked(g["id"] in o["servidores"])
+            ch.toggled.connect(lambda v, i=g["id"]: app.cambiar_discord(
+                servidores=[e for e in o["servidores"] if e != i] + ([i] if v else [])))
+            self.fila(lista, g["nombre"], ch)
+
+        lista = self.grupo(caja, "Aplicaciones", "Añade apps con el clic derecho en el widget de aplicaciones.")
+        color = QComboBox()
+        for clave, nombre in lanzador.COLORES_ICONOS:
+            color.addItem(_(nombre), clave)
+        color.setCurrentIndex(max(0, color.findData(app.config.get("apps_color", "original"))))
+        color.currentIndexChanged.connect(lambda i: app.color_apps(color.itemData(i)))
+        self.fila(lista, "Color de los iconos", color, "Los del tema se adaptan al cambiar de tema")
+
         lista = self.grupo(caja, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
@@ -3412,6 +3625,10 @@ class Monitor:
             # El widget de juegos llega oculto (también al actualizar): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("juegos")
             self.config["juegos_visto"] = True
+        if not self.config.get("apps_visto"):
+            # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
+            self.config.setdefault("ocultos", []).append("apps")
+            self.config["apps_visto"] = True
         global ANCHO, COLUMNAS, INTERVALO
         ANCHO = int(self.config.get("ancho", ANCHO))
         COLUMNAS = int(self.config.get("columnas", COLUMNAS))
@@ -3421,6 +3638,10 @@ class Monitor:
         self.tarjetas = []
         self.aplicar_tema(guardar=False)
         self.discord = Discord(CARPETA)
+        self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
+        self.discord_no_instalado = False
+        self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
+        self.vigilar_discord()
         self.actualizador = Actualizador(os.path.dirname(os.path.abspath(__file__)))
         self.tiempo = Tiempo(self.config.get("tiempo_ciudad") or CIUDAD_POR_DEFECTO)
         self.manual = False  # True cuando el usuario arrastra un widget
@@ -3704,6 +3925,19 @@ class Monitor:
         d["conectar"].setProperty("estilo", "principal")
         d["conectar"].setCursor(Qt.PointingHandCursor)
         d["conectar"].clicked.connect(lambda: self.conectar_discord(c.window()))
+        d["abrir"] = c.add(QPushButton(_("Abrir Discord")))
+        d["abrir"].setProperty("estilo", "principal")
+        d["abrir"].setCursor(Qt.PointingHandCursor)
+        d["abrir"].clicked.connect(self.abrir_discord)
+        d["canales"] = QWidget()
+        d["caja_canales"] = QVBoxLayout(d["canales"])
+        d["caja_canales"].setContentsMargins(0, 0, 0, 0)
+        d["caja_canales"].setSpacing(4)
+        d["canales_ids"] = None
+        c.add(d["canales"])
+        d["ultimo"] = c.add(QPushButton())
+        d["ultimo"].setCursor(Qt.PointingHandCursor)
+        d["ultimo"].clicked.connect(self.entrar_ultimo_discord)
         d["lista"] = QWidget()
         d["caja_lista"] = QVBoxLayout(d["lista"])
         d["caja_lista"].setContentsMargins(0, 4, 0, 0)
@@ -3770,6 +4004,11 @@ class Monitor:
         self.juego_vista = VistaJuego(self)
         c.add(self.juego_vista)
         c._estira = True
+
+        # Aplicaciones: un lanzador con los iconos que elija el usuario.
+        c = self.tarjeta("apps", "Aplicaciones")
+        self.apps_vista = VistaApps(self)
+        c.add(self.apps_vista)
         self.actualizar_velocidad()
 
         for t in self.tarjetas:
@@ -4115,6 +4354,8 @@ class Monitor:
                 a.setChecked(self.juego_vista.juego.nombre == clave)
             menu.addAction(_("Nueva partida"), self.juego_vista.nueva)
             menu.addSeparator()
+        if tarjeta.clave == "apps":
+            self.menu_apps(menu, tarjeta.window())
         if tarjeta.clave == "velocidad":
             sub = menu.addMenu(_("Estilo del velocímetro"))
             for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
@@ -4582,12 +4823,113 @@ class Monitor:
             menu.addAction(_("Desconectar de Discord (olvidar la autorización)"), self.discord.olvidar)
         menu.addSeparator()
 
+    def menu_apps(self, menu, padre=None):
+        v = self.apps_vista
+        apps = v.apps()
+        i, v.menu_indice = v.menu_indice, None
+        menu.addAction(_("Añadir aplicación…"), lambda: self.anadir_apps(padre))
+        if i is not None and i < len(apps):
+            menu.addAction(_("Quitar {app}").format(app=apps[i]["nombre"]), lambda: self.mover_app(i, None))
+            if i > 0:
+                menu.addAction(_("Mover a la izquierda"), lambda: self.mover_app(i, i - 1))
+            if i < len(apps) - 1:
+                menu.addAction(_("Mover a la derecha"), lambda: self.mover_app(i, i + 1))
+        sub = menu.addMenu(_("Color de los iconos"))
+        for clave, nombre in lanzador.COLORES_ICONOS:
+            a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.color_apps(c))
+            a.setCheckable(True)
+            a.setChecked(self.config.get("apps_color", "original") == clave)
+        menu.addSeparator()
+
+    def anadir_apps(self, padre=None):
+        apps = self.apps_vista.apps()
+        dlg = SelectorApps({a["id"] for a in apps}, padre)
+        if dlg.exec() == QDialog.Accepted:
+            apps.extend(dlg.elegidas())
+            self.apps_vista.cambiado()
+            self.ajustar_alturas()
+
+    def mover_app(self, i, destino):
+        apps = self.apps_vista.apps()
+        a = apps.pop(i)
+        if destino is not None:
+            apps.insert(destino, a)
+        self.apps_vista.cambiado()
+        self.ajustar_alturas()
+
+    def color_apps(self, modo):
+        self.config["apps_color"] = modo
+        self.apps_vista.cambiado()
+
     def recordar_canal(self, canal):
         recientes = [r for r in self.config.get("discord_recientes", []) if r["id"] != canal["id"]]
-        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"]})
+        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"],
+                             "guild_id": canal.get("guild_id")})
         if recientes[:8] != self.config.get("discord_recientes"):
             self.config["discord_recientes"] = recientes[:8]
             self.guardar_config()
+
+    def vigilar_discord(self):
+        self.discord.vigilar(self.config["discord"]["servidores"])
+
+    def cambiar_discord(self, **cambios):
+        self.config["discord"].update(cambios)
+        self.guardar_config()
+        self.vigilar_discord()
+        self.dc["version"] = None
+
+    def abrir_discord(self):
+        self.discord_no_instalado = not abrir_discord()
+        if not self.discord_no_instalado:
+            self.discord_abriendo = time.monotonic()
+            self.discord._despertar.set()
+        self.dc["version"] = None
+
+    def entrar_ultimo_discord(self):
+        recientes = self.config.get("discord_recientes", [])
+        if recientes:
+            self.discord.entrar(recientes[0]["id"])
+
+    def al_conectar_discord(self, s):
+        """Tras abrir Discord desde el widget: entra en el último canal o donde haya gente."""
+        if not self.discord_abriendo or time.monotonic() - self.discord_abriendo > 120:
+            self.discord_abriendo = 0
+            return
+        if s["estado"] != "conectado" or (s["canales_voz"] is None and self.config["discord"]["servidores"]):
+            return  # aún arrancando o sin haber mirado los canales
+        self.discord_abriendo = 0
+        accion = self.config["discord"]["al_abrir"]
+        if s["canal"]:
+            return
+        if accion == "ultimo":
+            self.entrar_ultimo_discord()
+        elif accion == "gente":
+            canales = [c for c in s["canales_voz"] or [] if c["personas"]]
+            if canales:
+                self.discord.entrar(max(canales, key=lambda c: len(c["personas"]))["id"])
+
+    def boton_canal_discord(self, c, con_servidor):
+        b = QPushButton()
+        b.setProperty("estilo", "dispositivo")
+        b.setCursor(Qt.PointingHandCursor)
+        textos = QVBoxLayout(b)
+        textos.setContentsMargins(8, 5, 8, 5)
+        textos.setSpacing(0)
+        nombre = etiqueta("", "sub")
+        nombre.setStyleSheet("font-weight: 600;")
+        recortar(nombre, f"🔊 {c['nombre']}" + (f" · {len(c['personas'])}" if c["personas"] else ""), ANCHO - 48)
+        textos.addWidget(nombre)
+        lineas = ([", ".join(c["personas"])] if c["personas"] else []) + \
+                 ([c["servidor"]] if con_servidor and c["servidor"] else [])
+        for texto in lineas:
+            lb = etiqueta("", "dim")
+            recortar(lb, texto, ANCHO - 48)
+            textos.addWidget(lb)
+        for lb in b.findChildren(QLabel):
+            lb.setAttribute(Qt.WA_TransparentForMouseEvents)
+        b.setMinimumHeight(textos.sizeHint().height())
+        b.clicked.connect(lambda _=False, i=c["id"]: self.discord.entrar(i))
+        return b
 
     def actualizar_discord(self):
         d = self.dc
@@ -4603,14 +4945,47 @@ class Monitor:
             "autorizando": _("Mira Discord: te está pidiendo que autorices el widget."),
         }
         aviso = s["error"] if estado == "error" else textos.get(estado, "")
-        if estado == "conectado" and not canal:
-            aviso = _("No estás en ningún canal de voz.")
+        if estado == "desconectado" and self.discord_abriendo:
+            aviso = _("Abriendo Discord…")
+        elif estado == "desconectado" and self.discord_no_instalado:
+            aviso = _("No encuentro Discord instalado.")
+        elif estado == "conectado" and not canal:
+            aviso = (_("Elige tu servidor de Discord en Configuración > Widgets.")
+                     if not self.config["discord"]["servidores"] else
+                     _("Buscando canales…") if s["canales_voz"] is None else
+                     _("Nadie en voz ahora mismo.") if not any(c["personas"] for c in s["canales_voz"]) else "")
         elif estado == "conectado" and s["error"]:
             aviso = s["error"]
+        self.al_conectar_discord(s)
         d["aviso"].setText(aviso)
         d["aviso"].setVisible(bool(aviso))
         d["conectar"].setVisible(estado in ("sin_config", "error"))
+        d["abrir"].setVisible(estado == "desconectado")
+        d["abrir"].setEnabled(not self.discord_abriendo)
         en_canal = estado == "conectado" and bool(canal)
+
+        # Sin canal: los canales de voz de mi servidor para entrar con un clic.
+        canales = (s["canales_voz"] or []) if estado == "conectado" and not canal else []
+        ids = [(c["id"], tuple(c["personas"])) for c in canales]
+        if ids != d["canales_ids"]:
+            d["canales_ids"] = ids
+            while d["caja_canales"].count():
+                d["caja_canales"].takeAt(0).widget().deleteLater()
+            varios = len({c["guild_id"] for c in canales}) > 1
+            botones = [self.boton_canal_discord(c, varios) for c in canales]
+            for b in botones:
+                d["caja_canales"].addWidget(b)
+            # Si no caben, se quitan antes los vacíos (los últimos primero) y luego los demás.
+            vacios = [b for b, c in zip(botones, canales) if not c["personas"]]
+            llenos = [b for b, c in zip(botones, canales) if c["personas"]]
+            d["tarjeta"].prescindibles_grupo("canales", vacios[::-1] + llenos[::-1], 1)
+        d["canales"].setVisible(bool(canales))
+        recientes = self.config.get("discord_recientes", [])
+        ultimo = (estado == "conectado" and not canal and not self.config["discord"]["servidores"]
+                  and bool(recientes))
+        if ultimo:
+            d["ultimo"].setText(_("Entrar en {canal}").format(canal=recientes[0]["nombre"]))
+        d["ultimo"].setVisible(ultimo)
         recortar(d["canal"], f"🔊 {canal['nombre']}" if en_canal else _("Sin canal de voz"), ANCHO - 32)
         recortar(d["servidor"], canal["servidor"] if en_canal else "", ANCHO - 32)
         d["servidor"].setVisible(en_canal and bool(canal["servidor"]))

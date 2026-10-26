@@ -13,8 +13,10 @@ eventos y guarda el estado; la interfaz lo lee con `instantanea()`.
 
 import json
 import os
+import shutil
 import socket
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -78,6 +80,29 @@ def rutas_socket():
     return [f"{c}/discord-ipc-{i}" for c in carpetas for i in range(10)]
 
 
+def abrir_discord():
+    """Abre Discord minimizado en la bandeja. Devuelve False si no lo encuentra instalado."""
+    if sys.platform == "win32":
+        base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Discord", "Update.exe")
+        ordenes = [[base, "--processStart", "Discord.exe", "--process-start-args", "--start-minimized"]] \
+            if os.path.exists(base) else []
+    else:
+        ordenes = [[p, "--start-minimized"] for p in ("discord", "Discord", "vesktop", "discord-canary")
+                   if shutil.which(p)]
+        for app in ("com.discordapp.Discord", "dev.vencord.Vesktop", "com.discordapp.DiscordCanary"):
+            if any(os.path.isdir(os.path.join(c, "app", app)) for c in
+                   ("/var/lib/flatpak", os.path.expanduser("~/.local/share/flatpak"))):
+                ordenes.append(["flatpak", "run", app, "--start-minimized"])
+    for orden in ordenes:
+        try:
+            subprocess.Popen(orden, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=sys.platform != "win32")
+            return True
+        except OSError:
+            continue
+    return False
+
+
 class Discord:
     def __init__(self, carpeta):
         self.ruta_config = os.path.join(carpeta, "discord.json")
@@ -92,6 +117,8 @@ class Discord:
         self.hablando = set()
         self.ajustes = {}           # mute, deaf, entrada, salida
         self.avatares = {}          # url -> bytes
+        self.canales_voz = None     # canales de voz de mis servidores elegidos (None: aún sin mirar)
+        self.servidores = []        # mis servidores: [{"id", "nombre"}]
         self.version = 0            # sube con cada cambio: la interfaz solo repinta entonces
         self._servidores = {}
         self._sock = None
@@ -99,7 +126,10 @@ class Discord:
         self._suscrito = None
         self._despertar = threading.Event()
         self._permitido = threading.Event()  # solo se conecta con el widget a la vista
+        self._vigilados = set()     # ids de los servidores cuyos canales se muestran
+        self._explorar = threading.Event()
         threading.Thread(target=self._bucle, daemon=True).start()
+        threading.Thread(target=self._bucle_explorar, daemon=True).start()
 
     def permitir(self, si):
         """Con el widget oculto no se conecta (ni pide autorizar a quien no lo usa)."""
@@ -166,7 +196,7 @@ class Discord:
                     self._sesion()
                 except (OSError, ConnectionError, ValueError, struct.error) as e:
                     if self.estado not in ("sin_config", "error"):
-                        self._cambio(estado="desconectado", canal=None, error=None)
+                        self._cambio(estado="desconectado", canal=None, error=None, canales_voz=None)
                     if not isinstance(e, (FileNotFoundError, ConnectionRefusedError, ConnectionError)):
                         self._cambio(error=_("Conexión con Discord perdida: {error}").format(error=e))
                 finally:
@@ -324,7 +354,8 @@ class Discord:
                 if not datos:
                     self._cambio(estado="error", error=_("Discord rechazó el acceso: {error}").format(error=error))
                     return
-            self._cambio(estado="conectado", yo=datos.get("user", {}).get("id"), error=None)
+            self._cambio(estado="conectado", yo=datos.get("user", {}).get("id"), error=None, canales_voz=None)
+            self._explorar.set()
             for evt in ("VOICE_CHANNEL_SELECT", "VOICE_SETTINGS_UPDATE"):
                 self.orden("SUBSCRIBE", evt=evt)
             self.orden("GET_VOICE_SETTINGS", respuesta=lambda d, e: d and self._ajustes(d))
@@ -349,6 +380,7 @@ class Discord:
             self._suscrito = None
         if not d:
             self._cambio(canal=None, miembros={}, ids=[], hablando=set())
+            self._explorar.set()
             return
         miembros, ids = {}, []
         for vs in d.get("voice_states", []):
@@ -418,6 +450,43 @@ class Discord:
                 (self.hablando.add if evt == "SPEAKING_START" else self.hablando.discard)(uid)
                 self.version += 1
 
+    # --- canales con gente ------------------------------------------------------------
+
+    def vigilar(self, ids):
+        """Servidores cuyos canales de voz se muestran (con quién hay en cada uno)."""
+        ids = set(ids)
+        if ids != self._vigilados:
+            self._vigilados = ids
+            self._explorar.set()
+
+    def _bucle_explorar(self):
+        """Mientras no estoy en voz, mira cada 20 s quién hay en los canales de mis servidores."""
+        while True:
+            self._explorar.wait(20)
+            self._explorar.clear()
+            if self.estado != "conectado":
+                continue
+            try:
+                datos, _error = self._llamar("GET_GUILDS", timeout=10)
+                servidores = [{"id": g["id"], "nombre": g.get("name", "")} for g in (datos or {}).get("guilds", [])]
+                self._servidores.update((g["id"], g["nombre"]) for g in servidores)
+                canales = []
+                vigilados = self._vigilados
+                for g in servidores:
+                    if self.canal or g["id"] not in vigilados:
+                        continue
+                    datos, _error = self._llamar("GET_CHANNELS", {"guild_id": g["id"]}, timeout=10)
+                    for c in (datos or {}).get("channels", []):
+                        if c.get("type") != 2:  # 2 = canal de voz
+                            continue
+                        datos, _error = self._llamar("GET_CHANNEL", {"channel_id": c["id"]}, timeout=10)
+                        personas = [self._miembro(vs)["nombre"] for vs in (datos or {}).get("voice_states", [])]
+                        canales.append({"id": c["id"], "nombre": c.get("name", "?"), "servidor": g["nombre"],
+                                        "guild_id": g["id"], "personas": personas})
+                self._cambio(servidores=servidores, canales_voz=canales)
+            except (TimeoutError, OSError):
+                pass
+
     def _pedir_avatar(self, url):
         if not url or url in self.avatares:
             return
@@ -440,6 +509,8 @@ class Discord:
                 "canal": dict(self.canal) if self.canal else None,
                 "miembros": [dict(self.miembros[i]) for i in self.ids if i in self.miembros],
                 "hablando": set(self.hablando), "ajustes": dict(self.ajustes),
+                "canales_voz": None if self.canales_voz is None else [dict(c) for c in self.canales_voz],
+                "servidores": list(self.servidores),
             }
 
     # --- acciones ------------------------------------------------------------------

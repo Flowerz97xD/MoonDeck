@@ -190,6 +190,12 @@ MoonDeck, acepta la invitacion y deja el Client Secret vacio.
 Los datos se guardan solo en %APPDATA%\MoonDeck\discord.json.
 Funciona con la app de escritorio de Discord (no con la web).
 
+Sin estar en voz, el widget muestra los canales de voz de tu servidor (con
+quien hay en cada uno): pulsa uno para entrar. Elige tu servidor en
+Configuracion > Widgets > "Tu servidor de Discord". Si Discord esta cerrado,
+el boton "Abrir Discord" lo abre minimizado y, si quieres, te mete en el
+ultimo canal o donde haya mas gente (Configuracion > Widgets > Discord).
+
 
 RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
 ------------------------------------
@@ -234,6 +240,15 @@ navegador...), con boton de silencio. Es el mismo volumen que el mezclador de
 Windows.
 Nota: en el navegador, el control funciona con YouTube, Spotify Web, SoundCloud
 y la mayoria de webs de musica; alguna web puede no informar del progreso.
+
+
+APLICACIONES
+------------
+Un lanzador con los iconos de las apps que elijas (llega oculto: activalo en
+menu > "Widgets visibles" > Aplicaciones). Clic derecho > "Anadir
+aplicacion..." para elegirlas; clic en un icono para abrirla; clic derecho en
+un icono para quitarlo o moverlo. "Color de los iconos": los originales o
+tenidos con el color de acento o del texto del tema (cambian con el tema).
 
 
 JUEGOS

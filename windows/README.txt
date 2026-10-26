@@ -191,6 +191,12 @@ MoonDeck, accept the invitation and leave the Client Secret empty.
 The data is only stored in %APPDATA%\MoonDeck\discord.json.
 It works with the Discord desktop app (not with the website).
 
+When you're not in voice, the widget shows the voice channels of your server
+(with who is in each one): click one to join. Choose your server in Settings >
+Widgets > "Your Discord server". If Discord is closed, the "Open Discord"
+button opens it minimized and, if you want, joins the last channel or the one
+with most people (Settings > Widgets > Discord).
+
 
 CLOCK, CALENDAR, AUDIO AND SPEED
 --------------------------------
@@ -231,6 +237,15 @@ sound (game, Discord, browser...), with a mute button. It is the same volume
 as the Windows mixer.
 Note: in the browser, control works with YouTube, Spotify Web, SoundCloud and
 most music websites; some websites may not report the progress.
+
+
+APPS
+----
+A launcher with the icons of the apps you choose (it starts hidden: turn it on
+in menu > "Visible widgets" > Apps). Right-click > "Add app..." to choose them;
+click an icon to open it; right-click an icon to remove or move it. "Icon
+color": the original ones or tinted with the theme's accent or text color
+(they follow the theme).
 
 
 GAMES

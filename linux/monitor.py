@@ -95,7 +95,7 @@ try:
         AppIndicator = None
 
     from glass import Blur, rounded_rects, superficie
-    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord
+    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord, abrir_discord
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import tema as temas
@@ -108,6 +108,7 @@ try:
     import velocimetro
     import esferas
     import juegos
+    import lanzador
     import dino_sprite
 except Exception:
     _excepthook(*sys.exc_info())
@@ -634,6 +635,166 @@ class VistaJuego(Dibujo):
 
     def dibujar(self, _w, cr):
         self.juego.dibujar(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height())
+
+
+class VistaApps(Dibujo):
+    """Lanzador: los iconos de las apps que elige el usuario; un clic las abre. Con el clic
+    derecho sobre un icono, el menú de la tarjeta trae quitarlo o moverlo."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.encima = None        # icono bajo el ratón
+        self.menu_indice = None   # icono sobre el que se abrió el menú
+        self._iconos = {}         # (id, color, escala) -> superficie de cairo
+        self._alto = None
+        self.add_events(Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.connect("draw", self.dibujar)
+        self.connect("size-allocate", lambda _w, r: self._ajustar(r.width))
+        self.connect("motion-notify-event", self._mover)
+        self.connect("leave-notify-event", lambda *_a: self._poner_encima(None))
+        self.connect("button-press-event", self._pulsar)
+        self.poner_alto(lanzador.TAM)
+
+    def apps(self):
+        return self.app.config.setdefault("apps", [])
+
+    def cambiado(self):
+        self.app.guardar_config()
+        self._ajustar(self.get_allocated_width())
+        self.queue_draw()
+
+    def _ajustar(self, ancho):
+        _pos, alto = lanzador.rejilla(len(self.apps()), ancho)
+        alto = max(lanzador.TAM, alto)
+        if alto != self._alto:
+            self._alto = alto
+            self.poner_alto(alto)
+
+    def _indice(self, x, y):
+        pos, _alto = lanzador.rejilla(len(self.apps()), self.get_allocated_width())
+        return next((i for i, (ix, iy) in enumerate(pos)
+                     if ix <= x < ix + lanzador.TAM and iy <= y < iy + lanzador.TAM), None)
+
+    def _poner_encima(self, i):
+        if i != self.encima:
+            self.encima = i
+            self.queue_draw()
+
+    def _mover(self, _w, ev):
+        self._poner_encima(self._indice(ev.x, ev.y))
+
+    def _pulsar(self, _w, ev):
+        tarjeta = self.get_ancestor(Tarjeta)
+        if (tarjeta and tarjeta.en_edicion()) or ev.type != Gdk.EventType.BUTTON_PRESS:
+            return False
+        i = self._indice(ev.x, ev.y)
+        if ev.button == 3:
+            self.menu_indice = i
+            return False  # el menú de la tarjeta
+        if ev.button == 1 and i is not None:
+            self.abrir(self.apps()[i])
+            return True
+        return False
+
+    def abrir(self, a):
+        try:
+            Gio.DesktopAppInfo.new(a["id"]).launch([], None)
+        except (TypeError, GLib.Error) as e:
+            log("No se pudo abrir", a["id"], e)
+
+    def _icono(self, a, color):
+        escala = self.get_scale_factor()
+        clave = (a["id"], color, escala)
+        if clave not in self._iconos:
+            pb = None
+            info = Gio.DesktopAppInfo.new(a["id"]) if a["id"] else None
+            gicon = info.get_icon() if info else None
+            tema = Gtk.IconTheme.get_default()
+            for g in (gicon, Gio.ThemedIcon.new("application-x-executable")):
+                if not g:
+                    continue
+                datos = tema.lookup_by_gicon_for_scale(g, lanzador.TAM, escala, Gtk.IconLookupFlags.FORCE_SIZE)
+                try:
+                    pb = datos.load_icon() if datos else None
+                except GLib.Error:
+                    pb = None
+                if pb:
+                    break
+            if pb and color:
+                if not pb.get_has_alpha():
+                    pb = pb.add_alpha(False, 0, 0, 0)
+                w, h, fila = pb.get_width(), pb.get_height(), pb.get_rowstride()
+                crudo = pb.get_pixels()
+                rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
+                datos = lanzador.tenir_icono(rgba, color)
+                pb = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(datos), GdkPixbuf.Colorspace.RGB, True, 8,
+                                                     w, h, w * 4)
+            self._iconos[clave] = Gdk.cairo_surface_create_from_pixbuf(pb, escala, None) if pb else None
+        return self._iconos[clave]
+
+    def dibujar(self, _w, cr):
+        apps = self.apps()
+        ancho = self.get_allocated_width()
+        if not apps:
+            lay = capa_texto(self, cr, _("Clic derecho > Añadir aplicación…"), 12)
+            pintar_texto(cr, lay, 0, 0, ancho, self.get_allocated_height(), GRIS, 0.5, 0.5, recortar=True)
+            return
+        modo = self.app.config.get("apps_color", "original")
+        color = {"acento": COLORES["azul"], "texto": BLANCO}.get(modo)
+        pos, _alto = lanzador.rejilla(len(apps), ancho)
+        t = lanzador.TAM
+        for i, (a, (x, y)) in enumerate(zip(apps, pos)):
+            if i == self.encima:
+                cr.set_source_rgba(*TENUE[:3], 0.14)
+                rect_redondeado(cr, x - 3, y - 3, t + 6, t + 6, 9)
+                cr.fill()
+            sup = self._icono(a, color)
+            if sup:
+                cr.set_source_surface(sup, x, y)
+                cr.paint()
+
+
+class SelectorApps(Gtk.Dialog):
+    """Elegir apps instaladas (las de los menús del sistema) para el lanzador."""
+
+    def __init__(self, ya):
+        super().__init__(title=_("Añadir aplicación"))
+        self.set_default_size(420, 520)
+        self.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
+        self.add_button(_("Añadir"), Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
+        cont = self.get_content_area()
+        cont.set_spacing(8)
+        for lado in ("start", "end", "top", "bottom"):
+            getattr(cont, f"set_margin_{lado}")(10)
+        self.buscar = Gtk.SearchEntry()
+        self.buscar.connect("search-changed", lambda _e: self.lista.invalidate_filter())
+        cont.pack_start(self.buscar, False, False, 0)
+        self.lista = Gtk.ListBox(selection_mode=Gtk.SelectionMode.MULTIPLE)
+        self.lista.set_activate_on_single_click(False)
+        self.lista.connect("row-activated", lambda *_a: self.response(Gtk.ResponseType.OK))
+        self.lista.set_filter_func(lambda fila: self.buscar.get_text().lower() in fila.nombre.lower())
+        apps = sorted((a for a in Gio.AppInfo.get_all() if a.should_show() and a.get_id() not in ya),
+                      key=lambda a: a.get_display_name().lower())
+        for a in apps:
+            fila = Gtk.ListBoxRow()
+            fila.id, fila.nombre = a.get_id(), a.get_display_name()
+            f = caja(False, 10)
+            for lado in ("start", "end", "top", "bottom"):
+                getattr(f, f"set_margin_{lado}")(4)
+            img = Gtk.Image.new_from_gicon(a.get_icon(), Gtk.IconSize.DND) if a.get_icon() else Gtk.Image()
+            f.pack_start(img, False, False, 0)
+            f.pack_start(Gtk.Label(label=fila.nombre, xalign=0), True, True, 0)
+            fila.add(f)
+            self.lista.add(fila)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_vexpand(True)
+        scroll.add(self.lista)
+        cont.pack_start(scroll, True, True, 0)
+        self.show_all()
+
+    def elegidas(self):
+        return [{"id": f.id, "nombre": f.nombre} for f in self.lista.get_selected_rows()]
 
 
 class BarrasNucleos(Dibujo):
@@ -1412,6 +1573,10 @@ CIUDADES = (  # reloj mundial: (nombre, zona horaria)
 )
 ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
                  ("minimal", "Minimalista"), ("mundial", "Reloj mundial")) + esferas.ESTILOS_NUEVOS
+# al_abrir: qué hacer al abrir Discord desde el widget ("nada", "ultimo" o "gente").
+# servidores: ids de los servidores cuyos canales de voz se muestran en el widget.
+DISCORD_POR_DEFECTO = {"al_abrir": "nada", "servidores": []}
+
 RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
@@ -3210,6 +3375,34 @@ class VentanaConfig(Gtk.Window):
         estilo.connect("changed", lambda w: app.cambiar_velocimetro(w.get_active_id()))
         self.fila(lista, "Estilo del velocímetro", estilo)
 
+        lista = self.grupo(cont, "Discord")
+        o = app.config["discord"]
+        al_abrir = Gtk.ComboBoxText()
+        for clave, nombre in (("nada", "Solo mostrar los canales"), ("ultimo", "Entrar en el último canal"),
+                              ("gente", "Entrar donde haya más gente")):
+            al_abrir.append(clave, _(nombre))
+        al_abrir.set_active_id(o["al_abrir"])
+        al_abrir.connect("changed", lambda w: app.cambiar_discord(al_abrir=w.get_active_id()))
+        self.fila(lista, "Al abrir Discord desde el widget", al_abrir)
+        servidores = app.discord.instantanea()["servidores"]
+        lista = self.grupo(cont, "Tu servidor de Discord",
+                           "Sus canales de voz salen en el widget cuando no estás en ninguno; pulsa uno para entrar.")
+        if not servidores:
+            self.fila(lista, "Abre Discord para ver tus servidores", Gtk.Label())
+        for g in servidores:
+            sw = Gtk.Switch(active=g["id"] in o["servidores"])
+            sw.connect("notify::active", lambda w, _p, i=g["id"]: app.cambiar_discord(
+                servidores=[e for e in o["servidores"] if e != i] + ([i] if w.get_active() else [])))
+            self.fila(lista, g["nombre"], sw)
+
+        lista = self.grupo(cont, "Aplicaciones", "Añade apps con el clic derecho en el widget de aplicaciones.")
+        color = Gtk.ComboBoxText()
+        for clave, nombre in lanzador.COLORES_ICONOS:
+            color.append(clave, _(nombre))
+        color.set_active_id(app.config.get("apps_color", "original"))
+        color.connect("changed", lambda w: app.color_apps(w.get_active_id()))
+        self.fila(lista, "Color de los iconos", color, "Los del tema se adaptan al cambiar de tema")
+
         lista = self.grupo(cont, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
@@ -3446,6 +3639,10 @@ class Monitor:
             # El widget de juegos llega oculto (también al actualizar): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("juegos")
             self.config["juegos_visto"] = True
+        if not self.config.get("apps_visto"):
+            # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
+            self.config.setdefault("ocultos", []).append("apps")
+            self.config["apps_visto"] = True
         idioma.poner(self.config.get("idioma") or idioma.detectar())
         global ANCHO, COLUMNAS, INTERVALO
         ANCHO = int(self.config.get("ancho", ANCHO))
@@ -3462,6 +3659,10 @@ class Monitor:
         self.test = TestVelocidad()
         self.test.resultado = self.config.get("velocidad")
         self.discord = Discord(CARPETA)
+        self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
+        self.discord_no_instalado = False
+        self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
+        self.vigilar_discord()
         self.actualizador = Actualizador(os.path.dirname(os.path.abspath(__file__)))
         self.tiempo = Tiempo(self.config.get("tiempo_ciudad") or CIUDAD_POR_DEFECTO)
         self.t_velocidad = None  # solo corre mientras se mide
@@ -3661,6 +3862,12 @@ class Monitor:
         d["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         d["conectar"] = c.add_w(boton_texto("Conectar con Discord…", "principal"))
         d["conectar"].connect("clicked", lambda _b: self.conectar_discord())
+        d["abrir"] = c.add_w(boton_texto("Abrir Discord", "principal"))
+        d["abrir"].connect("clicked", lambda _b: self.abrir_discord())
+        d["canales"] = c.add_w(caja(True, 4))
+        d["canales_ids"] = None
+        d["ultimo"] = c.add_w(boton_texto("", "normal"))
+        d["ultimo"].connect("clicked", lambda _b: self.entrar_ultimo_discord())
         d["lista"] = c.add_w(caja(True, 4))
         d["lista"].set_margin_top(4)
         d["controles"] = caja(True, 4)
@@ -3716,6 +3923,10 @@ class Monitor:
         c = self.tarjeta("juegos", "Juegos")
         self.juego_vista = c.add_w(VistaJuego(self), expand=True)
 
+        # Aplicaciones: un lanzador con los iconos que elija el usuario.
+        c = self.tarjeta("apps", "Aplicaciones")
+        self.apps_vista = c.add_w(VistaApps(self))
+
     # --- sensores ------------------------------------------------------------
 
     def construir_sensores(self, s):
@@ -3768,6 +3979,45 @@ class Monitor:
             self.aplicar(s)
             self.guardar_config()
         dialogo.destroy()
+
+    # --- aplicaciones ---------------------------------------------------------------
+
+    def menu_apps(self, menu):
+        v = self.apps_vista
+        apps = v.apps()
+        i, v.menu_indice = v.menu_indice, None
+        self.item(menu, "Añadir aplicación…", self.anadir_apps)
+        if i is not None and i < len(apps):
+            self.item(menu, _("Quitar {app}").format(app=apps[i]["nombre"]), lambda: self.mover_app(i, None))
+            if i > 0:
+                self.item(menu, "Mover a la izquierda", lambda: self.mover_app(i, i - 1))
+            if i < len(apps) - 1:
+                self.item(menu, "Mover a la derecha", lambda: self.mover_app(i, i + 1))
+        sub = self.submenu(menu, "Color de los iconos")
+        for clave, nombre in lanzador.COLORES_ICONOS:
+            self.item(sub, nombre, lambda c=clave: self.color_apps(c), self.config.get("apps_color", "original") == clave)
+        menu.append(Gtk.SeparatorMenuItem())
+
+    def anadir_apps(self):
+        apps = self.apps_vista.apps()
+        dlg = SelectorApps({a["id"] for a in apps})
+        if dlg.run() == Gtk.ResponseType.OK:
+            apps.extend(dlg.elegidas())
+            self.apps_vista.cambiado()
+            self.ajustar_alturas()
+        dlg.destroy()
+
+    def mover_app(self, i, destino):
+        apps = self.apps_vista.apps()
+        a = apps.pop(i)
+        if destino is not None:
+            apps.insert(destino, a)
+        self.apps_vista.cambiado()
+        self.ajustar_alturas()
+
+    def color_apps(self, modo):
+        self.config["apps_color"] = modo
+        self.apps_vista.cambiado()
 
     # --- títulos de los widgets ---------------------------------------------------
 
@@ -4134,6 +4384,8 @@ class Monitor:
                 self.item(sub, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
             self.item(menu, "Nueva partida", self.juego_vista.nueva)
             menu.append(Gtk.SeparatorMenuItem())
+        if tarjeta.clave == "apps":
+            self.menu_apps(menu)
         if tarjeta.clave == "velocidad":
             sub = self.submenu(menu, "Estilo del velocímetro")
             for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
@@ -4549,10 +4801,67 @@ class Monitor:
 
     def recordar_canal(self, canal):
         recientes = [r for r in self.config.get("discord_recientes", []) if r["id"] != canal["id"]]
-        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"]})
+        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"],
+                             "guild_id": canal.get("guild_id")})
         if recientes[:8] != self.config.get("discord_recientes"):
             self.config["discord_recientes"] = recientes[:8]
             self.guardar_config()
+
+    def vigilar_discord(self):
+        self.discord.vigilar(self.config["discord"]["servidores"])
+
+    def cambiar_discord(self, **cambios):
+        self.config["discord"].update(cambios)
+        self.guardar_config()
+        self.vigilar_discord()
+        self.dc["version"] = None
+
+    def abrir_discord(self):
+        self.discord_no_instalado = not abrir_discord()
+        if not self.discord_no_instalado:
+            self.discord_abriendo = time.monotonic()
+            self.discord._despertar.set()
+        self.dc["version"] = None
+
+    def entrar_ultimo_discord(self):
+        recientes = self.config.get("discord_recientes", [])
+        if recientes:
+            self.discord.entrar(recientes[0]["id"])
+
+    def al_conectar_discord(self, s):
+        """Tras abrir Discord desde el widget: entra en el último canal o donde haya gente."""
+        if not self.discord_abriendo or time.monotonic() - self.discord_abriendo > 120:
+            self.discord_abriendo = 0
+            return
+        if s["estado"] != "conectado" or (s["canales_voz"] is None and self.config["discord"]["servidores"]):
+            return  # aún arrancando o sin haber mirado los canales
+        self.discord_abriendo = 0
+        accion = self.config["discord"]["al_abrir"]
+        if s["canal"]:
+            return
+        if accion == "ultimo":
+            self.entrar_ultimo_discord()
+        elif accion == "gente":
+            canales = [c for c in s["canales_voz"] or [] if c["personas"]]
+            if canales:
+                self.discord.entrar(max(canales, key=lambda c: len(c["personas"]))["id"])
+
+    def boton_canal_discord(self, c, con_servidor):
+        b = Gtk.Button()
+        b.get_style_context().add_class("normal")
+        b.set_can_focus(False)
+        textos = caja(True, 0)
+        nombre = etiqueta(f"🔊 {c['nombre']}" + (f" · {len(c['personas'])}" if c["personas"] else ""), "sub")
+        nombre.get_style_context().add_class("negrita")
+        textos.pack_start(nombre, False, False, 0)
+        if c["personas"]:
+            textos.pack_start(etiqueta(", ".join(c["personas"]), "dim"), False, False, 0)
+        if con_servidor and c["servidor"]:
+            textos.pack_start(etiqueta(c["servidor"], "dim"), False, False, 0)
+        b.add(textos)
+        b.connect("clicked", lambda _b, i=c["id"]: self.discord.entrar(i))
+        b.show_all()
+        return b
 
     def actualizar_discord(self):
         d = self.dc
@@ -4568,14 +4877,47 @@ class Monitor:
             "autorizando": _("Mira Discord: te está pidiendo que autorices el widget."),
         }
         aviso = s["error"] if estado == "error" else textos.get(estado, "")
-        if estado == "conectado" and not canal:
-            aviso = _("No estás en ningún canal de voz.")
+        if estado == "desconectado" and self.discord_abriendo:
+            aviso = _("Abriendo Discord…")
+        elif estado == "desconectado" and self.discord_no_instalado:
+            aviso = _("No encuentro Discord instalado.")
+        elif estado == "conectado" and not canal:
+            aviso = (_("Elige tu servidor de Discord en Configuración > Widgets.")
+                     if not self.config["discord"]["servidores"] else
+                     _("Buscando canales…") if s["canales_voz"] is None else
+                     _("Nadie en voz ahora mismo.") if not any(c["personas"] for c in s["canales_voz"]) else "")
         elif estado == "conectado" and s["error"]:
             aviso = s["error"]
+        self.al_conectar_discord(s)
         poner_texto(d["aviso"], aviso)
         d["aviso"].set_visible(bool(aviso))
         d["conectar"].set_visible(estado in ("sin_config", "error"))
+        d["abrir"].set_visible(estado == "desconectado")
+        d["abrir"].set_sensitive(not self.discord_abriendo)
         en_canal = estado == "conectado" and bool(canal)
+
+        # Sin canal: los canales con gente para entrar con un clic, o el último en el que estuve.
+        canales = (s["canales_voz"] or []) if estado == "conectado" and not canal else []
+        ids = [(c["id"], tuple(c["personas"])) for c in canales]
+        if ids != d["canales_ids"]:
+            d["canales_ids"] = ids
+            for b in d["canales"].get_children():
+                b.destroy()
+            varios = len({c["guild_id"] for c in canales}) > 1
+            botones = [self.boton_canal_discord(c, varios) for c in canales]
+            for b in botones:
+                d["canales"].pack_start(b, False, False, 0)
+            # Si no caben, se quitan antes los vacíos (los últimos primero) y luego los demás.
+            vacios = [b for b, c in zip(botones, canales) if not c["personas"]]
+            llenos = [b for b, c in zip(botones, canales) if c["personas"]]
+            d["tarjeta"].prescindibles_grupo("canales", vacios[::-1] + llenos[::-1], 1)
+        d["canales"].set_visible(bool(canales))
+        recientes = self.config.get("discord_recientes", [])
+        ultimo = (estado == "conectado" and not canal and not self.config["discord"]["servidores"]
+                  and bool(recientes))
+        if ultimo:
+            d["ultimo"].set_label(_("Entrar en {canal}").format(canal=recientes[0]["nombre"]))
+        d["ultimo"].set_visible(ultimo)
         poner_texto(d["canal"], f"🔊 {canal['nombre']}" if en_canal else _("Sin canal de voz"))
         poner_texto(d["servidor"], canal["servidor"] if en_canal else "")
         d["servidor"].set_visible(en_canal and bool(canal["servidor"]))

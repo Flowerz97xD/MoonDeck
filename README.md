@@ -6,7 +6,7 @@
 
 Glass desktop widgets for **Linux (Pop!_OS / COSMIC)** and **Windows 10/11**.
 
-They show in real time: CPU, memory, GPUs, network, disks, sensors (temperatures, fans, voltages…), FPS (Windows only), music and per-app volume, clock, calendar, weather, your Discord voice channel, audio devices, an internet speed test and three mini-games (Minesweeper, 2048 and the Chrome dinosaur).
+They show in real time: CPU, memory, GPUs, network, disks, sensors (temperatures, fans, voltages…), FPS (Windows only), music and per-app volume, clock, calendar, weather, your Discord voice channel (and your server's channels, to join with a click), audio devices, an internet speed test, an app launcher and three mini-games (Minesweeper, 2048 and the Chrome dinosaur).
 
 Two modes:
 - **Widgets:** loose cards on the desktop.
