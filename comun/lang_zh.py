@@ -480,4 +480,8 @@ TEXTOS = {
     'Buscar…': '搜索…',
     'Elegir un programa (.exe)…': '选择程序 (.exe)…',
     'Programas (*.exe)': '程序 (*.exe)',
+    'Mostrar fondo y borde': '显示背景和边框',
+    'Fondo y borde': '背景和边框',
+    'Sin fondo ni borde, del widget solo se ve su contenido.': '没有背景和边框时，只显示小组件的内容。',
+    'Mostrar la fecha': '显示日期',
 }

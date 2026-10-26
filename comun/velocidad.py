@@ -23,10 +23,10 @@ CABECERAS = {"User-Agent": "Mozilla/5.0 (compatible; MoonDeck)", "Referer": f"ht
 
 class TestVelocidad:
     HILOS = 4
-    DURACION_BAJADA = 8.0       # segundos
-    DURACION_SUBIDA = 6.0
-    MAX_BAJADA = 400 * 2**20    # para no gastar demasiados datos en conexiones muy rápidas
-    MAX_SUBIDA = 120 * 2**20
+    DURACION_BAJADA = 15.0      # segundos, como Speedtest de Ookla
+    DURACION_SUBIDA = 15.0
+    MAX_BAJADA = 2048 * 2**20   # para no gastar demasiados datos en conexiones muy rápidas
+    MAX_SUBIDA = 1024 * 2**20   # (con estos topes, hasta ~1 Gbps / 570 Mbps se mide el tiempo entero)
     TROZO_SUBIDA = 1 * 2**20
 
     def __init__(self):

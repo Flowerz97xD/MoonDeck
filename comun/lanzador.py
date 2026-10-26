@@ -13,14 +13,21 @@ HUECO = 12   # separación entre iconos
 COLORES_ICONOS = (("original", "Colores originales"), ("acento", "Color de acento"), ("texto", "Color del texto"))
 
 
-def rejilla(n, ancho):
-    """Posición (x, y) de cada uno de los n iconos, centrados, y el alto que ocupan."""
+def rejilla(n, ancho, alto=0):
+    """Posición (x, y) de cada uno de los n iconos y el alto que ocupan. Cada fila va
+    centrada (también la última, aunque esté a medias) y, si sobra alto, el bloque
+    entero queda centrado en vertical."""
     cols = max(1, (int(ancho) + HUECO) // (TAM + HUECO))
     filas = -(-n // cols) if n else 0
-    usados = min(n, cols)
-    x0 = (ancho - (usados * TAM + (usados - 1) * HUECO)) / 2 if n else 0
-    pos = [(x0 + (i % cols) * (TAM + HUECO), (i // cols) * (TAM + HUECO)) for i in range(n)]
-    return pos, max(0, filas * (TAM + HUECO) - HUECO)
+    ocupado = max(0, filas * (TAM + HUECO) - HUECO)
+    y0 = max(0, (alto - ocupado) / 2)
+    pos = []
+    for i in range(n):
+        fila, col = divmod(i, cols)
+        en_fila = min(cols, n - fila * cols)
+        x0 = (ancho - (en_fila * TAM + (en_fila - 1) * HUECO)) / 2
+        pos.append((x0 + col * (TAM + HUECO), y0 + fila * (TAM + HUECO)))
+    return pos, ocupado
 
 
 def tenir_icono(rgba, color):

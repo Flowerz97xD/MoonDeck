@@ -480,4 +480,8 @@ TEXTOS = {
     'Buscar…': 'Suchen…',
     'Elegir un programa (.exe)…': 'Programm wählen (.exe)…',
     'Programas (*.exe)': 'Programme (*.exe)',
+    'Mostrar fondo y borde': 'Hintergrund und Rahmen anzeigen',
+    'Fondo y borde': 'Hintergrund und Rahmen',
+    'Sin fondo ni borde, del widget solo se ve su contenido.': 'Ohne Hintergrund und Rahmen ist nur der Inhalt des Widgets zu sehen.',
+    'Mostrar la fecha': 'Datum anzeigen',
 }

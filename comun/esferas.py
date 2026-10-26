@@ -201,6 +201,12 @@ def _digitos(ahora, o):
     return partes
 
 
+def _alto_fecha(o, h, umbral, alto):
+    """Alto de la franja de la fecha: 0 si está oculta o no cabe. La hora va siempre
+    centrada en el widget: se le deja el mismo margen arriba que la fecha ocupa abajo."""
+    return alto if o.get("fecha", True) and h > umbral else 0
+
+
 def _pie(l, pal, w, h, alto, fecha, ahora, o):
     """La fecha (y AM/PM) en una franja de abajo si hay sitio."""
     if alto <= 0:
@@ -215,13 +221,12 @@ def _pie(l, pal, w, h, alto, fecha, ahora, o):
 
 def _anillos(l, pal, w, h, ahora, o, fecha):
     """Tres anillos que se llenan: horas (fuera), minutos y segundos; la hora en medio."""
-    alto_fecha = 20 if h > 170 else 0
-    hh = h - alto_fecha
-    r = min(w, hh) / 2 - 4
-    cx, cy = w / 2, hh / 2
+    alto_fecha = _alto_fecha(o, h, 170, 20)
+    r = min(w, h - 2 * alto_fecha) / 2 - 4
+    cx, cy = w / 2, h / 2
     grueso = max(4.0, r * 0.11)
     hueco = grueso * 0.45
-    minuto = ahora.minute + ahora.second / 60
+    minuto = ahora.minute + (ahora.second + ahora.microsecond / 1e6) / 60
     anillos = [((ahora.hour % 12 + minuto / 60) / 12, pal["azul"]), (minuto / 60, pal["morado"])]
     if o["segundos"]:
         anillos.append(((ahora.second + ahora.microsecond / 1e6) / 60, pal["verde"]))
@@ -244,15 +249,15 @@ def _binario(l, pal, w, h, ahora, o, fecha):
     cifras = "".join(_digitos(ahora, o))
     bits = [2, 4, 3, 4, 3, 4][:len(cifras)]  # cuántos puntos necesita cada columna
     alto_etiq = 16 if h > 110 else 0
-    alto_fecha = 18 if h > 170 else 0
-    zona = h - alto_etiq - alto_fecha
+    alto_fecha = _alto_fecha(o, h, 170, 18)
+    zona = h - alto_etiq - 2 * alto_fecha
     grupos = len(cifras) // 2
     sep = 0.6  # hueco extra entre horas, minutos y segundos (en columnas)
     col = min(w / (len(cifras) + sep * (grupos - 1)), zona / 4)
     rad = col * 0.32
     total = col * (len(cifras) + sep * (grupos - 1))
     x0 = (w - total) / 2
-    y0 = (zona - 4 * col) / 2
+    y0 = (h - 4 * col - alto_etiq) / 2
     for i, (c, n) in enumerate(zip(cifras, bits)):
         x = x0 + col * (i + sep * (i // 2)) + col / 2
         valor = int(c)
@@ -277,8 +282,8 @@ NARANJA_NIXIE = (1.0, 0.52, 0.16)
 def _nixie(l, pal, w, h, ahora, o, fecha):
     """Tubos Nixie: cristal oscuro, la cifra "fantasma" y la de verdad brillando en naranja."""
     partes = _digitos(ahora, o)
-    alto_fecha = 18 if h > 150 else 0
-    zona = h - alto_fecha - 4
+    alto_fecha = _alto_fecha(o, h, 150, 18)
+    zona = h - 2 * alto_fecha - 4
     n = len(partes) * 2
     puntos = len(partes) - 1
     ancho_tubo = min((w - 8) / (n + puntos * 0.45 + (n - 1) * 0.12), zona * 0.62)
@@ -286,7 +291,7 @@ def _nixie(l, pal, w, h, ahora, o, fecha):
     gap = ancho_tubo * 0.12
     total = n * ancho_tubo + (n - 1) * gap + puntos * ancho_tubo * 0.45
     x = (w - total) / 2
-    y = (zona - alto_tubo) / 2 + 2
+    y = (h - alto_tubo) / 2
     px = alto_tubo * 0.78
     for k, parte in enumerate(partes):
         for c in parte:
@@ -313,15 +318,15 @@ def _flip(l, pal, w, h, ahora, o, fecha):
     """Reloj de tarjetas abatibles: una tarjeta por par de cifras, partida por la mitad."""
     partes = _digitos(ahora, o)[:2]
     seg = f"{ahora.second:02d}" if o["segundos"] else ""
-    alto_fecha = 18 if h > 150 else 0
-    zona = h - alto_fecha - 6
+    alto_fecha = _alto_fecha(o, h, 150, 18)
+    zona = h - 2 * alto_fecha - 6
     gap = max(6.0, w * 0.03)
     extra = 0.42 if seg else 0  # los segundos, en una tarjeta pequeña
     ancho = min((w - 8 - gap * (1 + (1 if seg else 0))) / (2 + extra), zona * 1.05)
     alto = min(zona, ancho * 0.95)
     total = ancho * (2 + extra) + gap * (1 + (1 if seg else 0))
     x = (w - total) / 2
-    y = (zona - alto) / 2 + 3
+    y = (h - alto) / 2
     fondo = mezcla(pal["tenue"], (0, 0, 0), 0.82)
     for texto, ancho_t, alto_t in [(p, ancho, alto) for p in partes] + ([(seg, ancho * extra, alto * 0.5)] if seg else []):
         yt = y + (alto - alto_t)
@@ -364,8 +369,8 @@ def _led(l, pal, w, h, ahora, o, fecha):
     partes = _digitos(ahora, o)
     principal = "".join(partes[:2])
     seg = partes[2] if len(partes) > 2 else ""
-    alto_fecha = 18 if h > 140 else 0
-    zona = h - alto_fecha - 8
+    alto_fecha = _alto_fecha(o, h, 140, 18)
+    zona = h - 2 * alto_fecha - 8
 
     # Piezas en unidades del alto de una cifra: (tipo, x, ancho, alto, texto).
     piezas, x = [], 0.0
@@ -386,7 +391,7 @@ def _led(l, pal, w, h, ahora, o, fecha):
     ch = min(zona, w / (x + 2 * margen))
     t = max(2.0, ch * 0.11)
     x0 = (w - x * ch) / 2
-    y = (zona - ch) / 2 + 4
+    y = (h - ch) / 2
     color = pal["azul"]
     sombra = con_alfa(pal["tenue"], 0.06)
     for tipo, px, pw, ph, c in piezas:

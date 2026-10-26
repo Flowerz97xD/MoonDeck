@@ -1008,7 +1008,7 @@ ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
 # servidores: ids de los servidores cuyos canales de voz se muestran en el widget.
 DISCORD_POR_DEFECTO = {"al_abrir": "nada", "servidores": []}
 
-RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
+RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True, "fecha": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
 
@@ -1034,6 +1034,16 @@ class RelojVista(QWidget):
         self.opciones = opciones
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.ajustar_minimo()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._fluido)
+        self._timer.start(33)
+
+    def _fluido(self):
+        """Con agujas o anillos y segundero, se redibuja ~30 veces por segundo para que
+        se muevan suaves (el resto de estilos cambia solo cada segundo)."""
+        o = self.opciones
+        if o["segundos"] and o["estilo"] in ("analogico", "anillos") and self.isVisible():
+            self.update()
 
     def ajustar_minimo(self):
         o = self.opciones
@@ -1067,11 +1077,11 @@ class RelojVista(QWidget):
     def digital(self, p, ahora, minimal=False):
         o = self.opciones
         w, h = self.width(), self.height()
-        alto_fecha = 0 if minimal and h < 140 else max(14, h * 0.16)
+        alto_fecha = 0 if not o["fecha"] or (minimal and h < 140) else max(14, h * 0.16)
         hora = self.hora(ahora)
         extra = ahora.strftime("%S") if o["segundos"] and not minimal else ""
         ampm = "" if o["h24"] else ("AM" if ahora.hour < 12 else "PM")
-        zona = QRectF(0, 0, w, h - alto_fecha)
+        zona = QRectF(0, 0, w, h - 2 * alto_fecha)
         f = fuente_que_quepa(hora + (" 00" if extra or ampm else ""), w * 0.98, zona.height() * 0.92,
                              QFont.ExtraLight if minimal else QFont.Light, self.font())
         p.setFont(f)
@@ -1080,11 +1090,12 @@ class RelojVista(QWidget):
         f2 = QFont(f)
         f2.setPixelSize(max(8, f.pixelSize() // 3))
         p.setPen(QColor(C_TEXTO))
-        x0 = 0 if not minimal else (w - ancho_hora - (metr.horizontalAdvance(" 00") if ampm else 0)) / 2
-        # Hora y fecha centradas juntas en vertical (sin hueco entre ellas en celdas altas).
+        ancho_extra = (QFontMetricsF(f2).horizontalAdvance(extra or ampm) + f.pixelSize() * 0.12
+                       if extra or ampm else 0)
+        x0 = (w - ancho_hora - ancho_extra) / 2
+        # La hora, centrada en el widget (la fecha va debajo, sin moverla).
         hueco = metr.capHeight() * 0.35
-        bloque = metr.capHeight() + (hueco + alto_fecha if alto_fecha else 0)
-        arriba = max(0, (h - bloque) / 2)
+        arriba = max(0, (h - metr.capHeight()) / 2)
         base = arriba + metr.capHeight()
         p.drawText(QPointF(x0, base), hora)
         if extra or ampm:
@@ -1099,16 +1110,16 @@ class RelojVista(QWidget):
             p.setFont(ff)
             p.setPen(QColor(C_GRIS_CLARO))
             p.drawText(QRectF(0, min(base + hueco, h - alto_fecha), w, alto_fecha),
-                       (Qt.AlignHCenter if minimal else Qt.AlignLeft) | Qt.AlignVCenter, fecha_larga(ahora.date()))
+                       Qt.AlignHCenter | Qt.AlignVCenter, fecha_larga(ahora.date()))
 
     def minimal(self, p, ahora):
         self.digital(p, ahora, minimal=True)
 
     def analogico(self, p, ahora):
         w, h = self.width(), self.height()
-        alto_fecha = 20 if h > 180 else 0
-        r = min(w, h - alto_fecha) / 2 - 4
-        c = QPointF(w / 2, (h - alto_fecha) / 2)
+        alto_fecha = 20 if self.opciones["fecha"] and h > 180 else 0
+        r = min(w, h - 2 * alto_fecha) / 2 - 4
+        c = QPointF(w / 2, h / 2)
         p.setPen(QPen(tenue(50), max(1.0, r * 0.02)))
         p.setBrush(tenue(10))
         p.drawEllipse(c, r, r)
@@ -1120,7 +1131,7 @@ class RelojVista(QWidget):
             dx, dy = math.sin(ang), -math.cos(ang)
             p.drawLine(QPointF(c.x() + dx * r * (0.92 - largo), c.y() + dy * r * (0.92 - largo)),
                        QPointF(c.x() + dx * r * 0.92, c.y() + dy * r * 0.92))
-        seg = ahora.second
+        seg = ahora.second + ahora.microsecond / 1e6
         minuto = ahora.minute + seg / 60
         horas = (ahora.hour % 12) + minuto / 60
 
@@ -1699,6 +1710,11 @@ class Tarjeta(QWidget):
         """Ajustes del tema que le tocan: los del panel si está dentro de él."""
         return self.app.tema["panel" if self.relleno == "claro" else "widgets"]
 
+    def sin_fondo(self):
+        """El usuario puede quitar el fondo y el borde de cada widget (solo queda el contenido)."""
+        app = getattr(self, "app", None)
+        return bool(app) and self.clave in app.config.get("sin_fondo", [])
+
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -1708,6 +1724,14 @@ class Tarjeta(QWidget):
         r = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
         ruta = QPainterPath()
         ruta.addRoundedRect(r, self.radio, self.radio)
+        if self.sin_fondo():
+            # Casi invisible, pero no del todo: en Windows los píxeles transparentes no reciben clics.
+            p.fillPath(ruta, QColor(0, 0, 0, 1))
+            if self.en_edicion():
+                p.setBrush(Qt.NoBrush)
+                p.setPen(QPen(acento(170), 1.5, Qt.DashLine))
+                p.drawRoundedRect(QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5), self.radio, self.radio)
+            return
         p.save()
         p.setClipPath(ruta)
         # En su propia ventana con acrílico, el color del fondo ya lo pone el cristal.
@@ -1855,7 +1879,7 @@ class VentanaWidget(BaseVentana):
         if not USA_ACRILICO or not self.app:
             return
         p = self.app.tema["widgets"]
-        if p["cristal"]:
+        if p["cristal"] and not self.tarjeta.sin_fondo():
             # Con degradado, el color lo pinta Qt encima: el acrílico solo un poco de tinte.
             alfa = 0x18 if p["degradado"] else round(p["opacidad"] * 255 * self.tarjeta.opacidad)
             self.windowEffect.setAcrylicEffect(self.winId(), f"{p['fondo'].lstrip('#').upper()}{alfa:02X}")
@@ -2578,8 +2602,8 @@ class VistaApps(QWidget):
         self._iconos = {}         # (id, color, escala) -> QPixmap
         self._alto = None
         self.setMouseTracking(True)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(lanzador.TAM)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # los iconos se centran en la celda
+        self.setMinimumHeight(lanzador.TAM)
 
     def apps(self):
         return self.app.config.setdefault("apps", [])
@@ -2594,14 +2618,15 @@ class VistaApps(QWidget):
         alto = max(lanzador.TAM, alto)
         if alto != self._alto:
             self._alto = alto
-            self.setFixedHeight(alto)
+            self.setMinimumHeight(alto)
+            self.updateGeometry()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._ajustar()
 
     def _indice(self, pos):
-        rejilla, _alto = lanzador.rejilla(len(self.apps()), self.width())
+        rejilla, _alto = lanzador.rejilla(len(self.apps()), self.width(), self.height())
         return next((i for i, (ix, iy) in enumerate(rejilla)
                      if ix <= pos.x() < ix + lanzador.TAM and iy <= pos.y() < iy + lanzador.TAM), None)
 
@@ -2675,7 +2700,7 @@ class VistaApps(QWidget):
             return
         modo = self.app.config.get("apps_color", "original")
         color = {"acento": rgb(acento()), "texto": rgb(QColor(C_TEXTO))}.get(modo)
-        rejilla, _alto = lanzador.rejilla(len(apps), self.width())
+        rejilla, _alto = lanzador.rejilla(len(apps), self.width(), self.height())
         t = lanzador.TAM
         for i, (a, (x, y)) in enumerate(zip(apps, rejilla)):
             if i == self.encima:
@@ -3348,7 +3373,7 @@ class VentanaConfig(QWidget):
         tipo.setCurrentIndex(max(0, tipo.findData(o["estilo"])))
         tipo.currentIndexChanged.connect(lambda i: app.cambiar_reloj(estilo=tipo.itemData(i)))
         self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos")):
+        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             ch = QCheckBox()
             ch.setChecked(bool(o[clave]))
             ch.toggled.connect(lambda v, c=clave: app.cambiar_reloj(**{c: v}))
@@ -3397,6 +3422,13 @@ class VentanaConfig(QWidget):
             ch = QCheckBox()
             ch.setChecked(t.clave not in sin)
             ch.toggled.connect(lambda v, t=t: app.alternar_titulo(t, v))
+            self.fila(lista, t.nombre_menu, ch)
+
+        lista = self.grupo(caja, "Fondo y borde", "Sin fondo ni borde, del widget solo se ve su contenido.")
+        for t in app.tarjetas:
+            ch = QCheckBox()
+            ch.setChecked(not t.sin_fondo())
+            ch.toggled.connect(lambda v, t=t: app.alternar_fondo(t, v))
             self.fila(lista, t.nombre_menu, ch)
 
     def pagina_tarjetas(self, caja, s):
@@ -4009,6 +4041,7 @@ class Monitor:
         c = self.tarjeta("apps", "Aplicaciones")
         self.apps_vista = VistaApps(self)
         c.add(self.apps_vista)
+        c._estira = True
         self.actualizar_velocidad()
 
         for t in self.tarjetas:
@@ -4389,6 +4422,9 @@ class Monitor:
         a = menu.addAction(_("Mostrar título"), lambda: self.alternar_titulo(tarjeta))
         a.setCheckable(True)
         a.setChecked(tarjeta.clave not in self.config.get("sin_titulo", []))
+        a = menu.addAction(_("Mostrar fondo y borde"), lambda: self.alternar_fondo(tarjeta))
+        a.setCheckable(True)
+        a.setChecked(not tarjeta.sin_fondo())
         menu.addAction(_("Ocultar este widget"), lambda: self.alternar_widget(tarjeta))
         menu.addSeparator()
         self.acciones_comunes(menu, tarjeta.window())
@@ -4549,7 +4585,7 @@ class Monitor:
             a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
             a.setCheckable(True)
             a.setChecked(o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos")):
+        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
             a.setCheckable(True)
             a.setChecked(o[clave])
@@ -4645,6 +4681,19 @@ class Monitor:
             sin.append(tarjeta.clave)
         self.poner_titulos()
         self.ajustar_alturas()
+        self.guardar_config()
+
+    def alternar_fondo(self, tarjeta, mostrar=None):
+        sin = self.config.setdefault("sin_fondo", [])
+        if mostrar is None:
+            mostrar = tarjeta.clave in sin
+        if mostrar and tarjeta.clave in sin:
+            sin.remove(tarjeta.clave)
+        elif not mostrar and tarjeta.clave not in sin:
+            sin.append(tarjeta.clave)
+        if tarjeta.ventana:
+            tarjeta.ventana.aplicar_tinte()
+        tarjeta.update()
         self.guardar_config()
 
     def poner_titulos(self):

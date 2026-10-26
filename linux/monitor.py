@@ -654,6 +654,7 @@ class VistaApps(Dibujo):
         self.connect("motion-notify-event", self._mover)
         self.connect("leave-notify-event", lambda *_a: self._poner_encima(None))
         self.connect("button-press-event", self._pulsar)
+        self.set_vexpand(True)  # ocupa toda la celda: los iconos se centran en ella
         self.poner_alto(lanzador.TAM)
 
     def apps(self):
@@ -672,7 +673,7 @@ class VistaApps(Dibujo):
             self.poner_alto(alto)
 
     def _indice(self, x, y):
-        pos, _alto = lanzador.rejilla(len(self.apps()), self.get_allocated_width())
+        pos, _alto = lanzador.rejilla(len(self.apps()), self.get_allocated_width(), self.get_allocated_height())
         return next((i for i, (ix, iy) in enumerate(pos)
                      if ix <= x < ix + lanzador.TAM and iy <= y < iy + lanzador.TAM), None)
 
@@ -742,7 +743,7 @@ class VistaApps(Dibujo):
             return
         modo = self.app.config.get("apps_color", "original")
         color = {"acento": COLORES["azul"], "texto": BLANCO}.get(modo)
-        pos, _alto = lanzador.rejilla(len(apps), ancho)
+        pos, _alto = lanzador.rejilla(len(apps), ancho, self.get_allocated_height())
         t = lanzador.TAM
         for i, (a, (x, y)) in enumerate(zip(apps, pos)):
             if i == self.encima:
@@ -1577,7 +1578,7 @@ ESTILOS_RELOJ = (("digital", "Digital"), ("analogico", "Analógico"),
 # servidores: ids de los servidores cuyos canales de voz se muestran en el widget.
 DISCORD_POR_DEFECTO = {"al_abrir": "nada", "servidores": []}
 
-RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True,
+RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True, "fecha": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
 
 
@@ -1596,6 +1597,15 @@ class RelojVista(Dibujo):
         self.set_vexpand(True)
         self.ajustar_minimo()
         self.connect("draw", self.dibujar)
+        GLib.timeout_add(33, self._fluido)
+
+    def _fluido(self):
+        """Con agujas o anillos y segundero, se redibuja ~30 veces por segundo para que
+        se muevan suaves (el resto de estilos cambia solo cada segundo)."""
+        o = self.opciones
+        if o["segundos"] and o["estilo"] in ("analogico", "anillos") and self.get_mapped():
+            self.queue_draw()
+        return True
 
     def ajustar_minimo(self):
         o = self.opciones
@@ -1620,23 +1630,22 @@ class RelojVista(Dibujo):
     def digital(self, cr, ahora, minimal=False):
         o = self.opciones
         w, h = self.get_allocated_width(), self.get_allocated_height()
-        alto_fecha = 0 if minimal and h < 140 else max(14, h * 0.16)
+        alto_fecha = 0 if not o["fecha"] or (minimal and h < 140) else max(14, h * 0.16)
         hora = self.hora(ahora)
         extra = ahora.strftime("%S") if o["segundos"] and not minimal else ""
         ampm = "" if o["h24"] else ("AM" if ahora.hour < 12 else "PM")
         peso = Pango.Weight.ULTRALIGHT if minimal else Pango.Weight.LIGHT
-        alto_cifras = (h - alto_fecha) * (0.80 if minimal else 0.72)
+        alto_cifras = (h - 2 * alto_fecha) * (0.80 if minimal else 0.72)
         px = px_que_quepa(self, cr, hora + (" 00" if extra or ampm else ""), w * 0.98, alto_cifras, peso)
         lay = capa_texto(self, cr, hora, px, peso)
         tinta, logico = lay.get_pixel_extents()
         ancho_hora = logico.width
         lay2 = capa_texto(self, cr, extra or ampm, px / 3, peso)
         ancho_extra = lay2.get_pixel_size()[0] + px * 0.12 if (extra or ampm) else 0
-        # Hora y fecha centradas juntas en vertical.
+        # La hora, centrada en el widget (la fecha va debajo, sin moverla).
         hueco = tinta.height * 0.35
-        bloque = tinta.height + (hueco + alto_fecha if alto_fecha else 0)
-        arriba = max(0, (h - bloque) / 2)
-        x0 = 0 if not minimal else (w - ancho_hora - ancho_extra) / 2
+        arriba = max(0, (h - tinta.height) / 2)
+        x0 = (w - ancho_hora - ancho_extra) / 2
         y_lay = arriba - tinta.y
         cr.set_source_rgb(*BLANCO)
         cr.move_to(x0, y_lay)
@@ -1658,16 +1667,16 @@ class RelojVista(Dibujo):
             if layf.get_pixel_size()[0] > w:
                 layf = capa_texto(self, cr, texto, pxf * w / layf.get_pixel_size()[0] * 0.96)
             y = min(arriba + tinta.height + hueco, h - alto_fecha)
-            pintar_texto(cr, layf, 0, y, w, alto_fecha, GRIS_CLARO, 0.5 if minimal else 0.0)
+            pintar_texto(cr, layf, 0, y, w, alto_fecha, GRIS_CLARO, 0.5)
 
     def minimal(self, cr, ahora):
         self.digital(cr, ahora, minimal=True)
 
     def analogico(self, cr, ahora):
         w, h = self.get_allocated_width(), self.get_allocated_height()
-        alto_fecha = 20 if h > 180 else 0
-        r = min(w, h - alto_fecha) / 2 - 4
-        cx, cy = w / 2, (h - alto_fecha) / 2
+        alto_fecha = 20 if self.opciones["fecha"] and h > 180 else 0
+        r = min(w, h - 2 * alto_fecha) / 2 - 4
+        cx, cy = w / 2, h / 2
         cr.arc(cx, cy, r, 0, 2 * math.pi)
         cr.set_source_rgba(*TENUE, 0.04)
         cr.fill_preserve()
@@ -1684,7 +1693,7 @@ class RelojVista(Dibujo):
             cr.move_to(cx + dx * r * (0.92 - largo), cy + dy * r * (0.92 - largo))
             cr.line_to(cx + dx * r * 0.92, cy + dy * r * 0.92)
             cr.stroke()
-        seg = ahora.second
+        seg = ahora.second + ahora.microsecond / 1e6
         minuto = ahora.minute + seg / 60
         horas = (ahora.hour % 12) + minuto / 60
 
@@ -2325,12 +2334,19 @@ class Tarjeta(Gtk.EventBox):
         """Con neón, la tarjeta se dibuja un poco hacia dentro para que quepa el halo."""
         return NEON_MARGEN if self.perfil()["neon"] else 0
 
+    def sin_fondo(self):
+        """El usuario puede quitar el fondo y el borde de cada widget (solo queda el contenido)."""
+        app = getattr(self, "app", None)
+        return bool(app) and self.clave in app.config.get("sin_fondo", [])
+
     def dibujar_fondo(self, _w, cr):
         p = self.perfil()
         self.radio = p["radio"]
         w, h = self.get_allocated_width(), self.get_allocated_height()
         m = self.margen_neon()
         x, y, cw, ch = m + 0.5, m + 0.5, w - 2 * m - 1, h - 2 * m - 1
+        if self.sin_fondo():
+            return False
         cr.save()
         rect_redondeado(cr, x, y, cw, ch, self.radio)
         cr.clip()
@@ -2507,6 +2523,9 @@ class VentanaCristal(Gtk.Window):
         return False
 
     def rects_blur(self):
+        tarjeta = getattr(self, "tarjeta", None)
+        if tarjeta and tarjeta.sin_fondo():
+            return []
         a = self.get_allocation()
         p = self.app.tema["widgets"]
         m = NEON_MARGEN if p["neon"] else 0
@@ -3362,7 +3381,7 @@ class VentanaConfig(Gtk.Window):
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
         self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos")):
+        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             sw = Gtk.Switch(active=bool(o[clave]))
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
@@ -3408,6 +3427,12 @@ class VentanaConfig(Gtk.Window):
         for t in app.tarjetas:
             sw = Gtk.Switch(active=t.clave not in sin)
             sw.connect("notify::active", lambda w, _p, t=t: app.alternar_titulo(t, w.get_active()))
+            self.fila(lista, t.nombre_menu, sw)
+
+        lista = self.grupo(cont, "Fondo y borde", "Sin fondo ni borde, del widget solo se ve su contenido.")
+        for t in app.tarjetas:
+            sw = Gtk.Switch(active=not t.sin_fondo())
+            sw.connect("notify::active", lambda w, _p, t=t: app.alternar_fondo(t, w.get_active()))
             self.fila(lista, t.nombre_menu, sw)
 
     def pagina_tarjetas(self, cont, seccion):
@@ -3925,7 +3950,7 @@ class Monitor:
 
         # Aplicaciones: un lanzador con los iconos que elija el usuario.
         c = self.tarjeta("apps", "Aplicaciones")
-        self.apps_vista = c.add_w(VistaApps(self))
+        self.apps_vista = c.add_w(VistaApps(self), expand=True)
 
     # --- sensores ------------------------------------------------------------
 
@@ -4031,6 +4056,19 @@ class Monitor:
             sin.append(tarjeta.clave)
         self.poner_titulos()
         self.ajustar_alturas()
+        self.guardar_config()
+
+    def alternar_fondo(self, tarjeta, mostrar=None):
+        sin = self.config.setdefault("sin_fondo", [])
+        if mostrar is None:
+            mostrar = tarjeta.clave in sin
+        if mostrar and tarjeta.clave in sin:
+            sin.remove(tarjeta.clave)
+        elif not mostrar and tarjeta.clave not in sin:
+            sin.append(tarjeta.clave)
+        tarjeta.queue_draw()
+        if tarjeta.ventana:
+            tarjeta.ventana.actualizar_blur()
         self.guardar_config()
 
     def poner_titulos(self):
@@ -4412,6 +4450,7 @@ class Monitor:
                           lambda: self.sacar_del_panel(tarjeta))
         self.item(menu, "Mostrar título", lambda: self.alternar_titulo(tarjeta),
                   tarjeta.clave not in self.config.get("sin_titulo", []))
+        self.item(menu, "Mostrar fondo y borde", lambda: self.alternar_fondo(tarjeta), not tarjeta.sin_fondo())
         self.item(menu, "Ocultar este widget", lambda: self.alternar_widget(tarjeta))
         menu.append(Gtk.SeparatorMenuItem())
         self.acciones_comunes(menu)
@@ -4563,7 +4602,7 @@ class Monitor:
         tipos = self.submenu(menu, "Tipo de reloj")
         for clave, nombre in ESTILOS_RELOJ:
             self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos")):
+        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
         ciudades = self.submenu(menu, "Ciudades (reloj mundial, hasta 8)")
         for nombre, zona in CIUDADES:
