@@ -95,6 +95,7 @@ try:
         AppIndicator = None
 
     from glass import Blur, rounded_rects, superficie
+    from escritorios import Escritorios, vista_general
     from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord, abrir_discord
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
@@ -2475,6 +2476,9 @@ class VentanaCristal(Gtk.Window):
         self.set_app_paintable(True)
         self.blur = None
         self._rects = None
+        # La rueda sobre lo que no la usa (todo menos las barras deslizantes) cambia de escritorio.
+        self.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.connect("scroll-event", lambda _w, ev: bool(getattr(self, "app", None)) and self.app.rueda(ev))
         self.con_capas = CAPAS
         if CAPAS:
             GtkLayerShell.init_for_window(self)
@@ -3541,6 +3545,14 @@ class VentanaConfig(Gtk.Window):
         sw.connect("notify::active", lambda w, _p: app.autoarranque(w.get_active()))
         self.fila(lista, "Abrir al iniciar sesión", sw)
 
+        lista = self.grupo(cont, "Escritorios virtuales")
+        sw = Gtk.Switch(active=app.config.get("rueda_escritorios", True))
+        sw.connect("notify::active", lambda w, _p: (app.config.__setitem__("rueda_escritorios", w.get_active()),
+                                                     app.guardar_config()))
+        self.fila(lista, "Cambiar de escritorio con la rueda del ratón", sw,
+                  "Girando la rueda sobre un widget (menos en las barras de volumen y similares). "
+                  "Con Ctrl + rueda abajo, se ven todos los escritorios.")
+
         lista = self.grupo(cont, "Widgets")
 
         def numero(clave, minimo, maximo, paso, digitos, fn):
@@ -3684,6 +3696,8 @@ class Monitor:
         self.test = TestVelocidad()
         self.test.resultado = self.config.get("velocidad")
         self.discord = Discord(CARPETA)
+        self.escritorios = Escritorios()
+        self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
         self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
         self.discord_no_instalado = False
         self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
@@ -4004,6 +4018,34 @@ class Monitor:
             self.aplicar(s)
             self.guardar_config()
         dialogo.destroy()
+
+    # --- escritorios virtuales -------------------------------------------------------
+
+    def rueda(self, ev):
+        """Rueda abajo: escritorio siguiente; arriba: el anterior; Ctrl + rueda abajo: todos
+        los escritorios. En los touchpads (scroll
+        suave) se acumula el giro, y como mucho cambia uno cada 0,3 s."""
+        if not self.config.get("rueda_escritorios", True) or not self.escritorios.disponible:
+            return False
+        if ev.direction == Gdk.ScrollDirection.SMOOTH:
+            delta = ev.get_scroll_deltas()[2]
+        elif ev.direction in (Gdk.ScrollDirection.UP, Gdk.ScrollDirection.DOWN):
+            delta = 1.0 if ev.direction == Gdk.ScrollDirection.DOWN else -1.0
+        else:
+            return False
+        ahora = time.monotonic()
+        if ahora - self._rueda_ult > 0.6:  # un giro nuevo: lo de antes no cuenta
+            self._rueda = 0.0
+        self._rueda_ult = ahora
+        self._rueda += delta
+        if abs(self._rueda) >= 1 and ahora - self._rueda_t > 0.3:
+            if ev.get_state() & Gdk.ModifierType.CONTROL_MASK:
+                if self._rueda > 0:  # Ctrl + rueda abajo: la vista con todos los escritorios
+                    vista_general()
+            else:
+                self.escritorios.cambiar(1 if self._rueda > 0 else -1)
+            self._rueda, self._rueda_t = 0.0, ahora
+        return True
 
     # --- aplicaciones ---------------------------------------------------------------
 

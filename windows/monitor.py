@@ -1557,6 +1557,27 @@ def css_tema(t):
     return css
 
 
+def cambiar_escritorio(paso):
+    """Escritorio virtual siguiente (+1) o anterior (-1): pulsa Ctrl+Win+→/←."""
+    if not ES_WINDOWS:
+        return
+    teclas = (0x11, 0x5B, 0x27 if paso > 0 else 0x25)  # Ctrl, Win, flecha
+    for t in teclas:
+        ctypes.windll.user32.keybd_event(t, 0, 0x1 if t in (0x25, 0x27) else 0, 0)
+    for t in reversed(teclas):
+        ctypes.windll.user32.keybd_event(t, 0, 0x2 | (0x1 if t in (0x25, 0x27) else 0), 0)  # soltar
+
+
+def vista_escritorios():
+    """La vista de tareas de Windows, con todos los escritorios: pulsa Win+Tab."""
+    if not ES_WINDOWS:
+        return
+    for t in (0x5B, 0x09):
+        ctypes.windll.user32.keybd_event(t, 0, 0, 0)
+    for t in (0x09, 0x5B):
+        ctypes.windll.user32.keybd_event(t, 0, 0x2, 0)
+
+
 class Tarjeta(QWidget):
     """Contenido de un widget. Vive en su propia ventana (VentanaWidget) o en el panel."""
 
@@ -1805,6 +1826,11 @@ class Tarjeta(QWidget):
         elif self._arrastre == "tam":
             self.app.panel.soltar_tam(self)
         self._arrastre = None
+
+    def wheelEvent(self, e):
+        # La rueda sobre lo que no la usa (todo menos las barras deslizantes) cambia de escritorio.
+        if not self.app.rueda(e):
+            e.ignore()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton and self.en_edicion():
@@ -2056,6 +2082,11 @@ class VentanaPanel(QWidget):
     MAX_COLUMNAS = 12
     MAX_ALTO = 6
     ANCHO_MIN = 290
+
+    def wheelEvent(self, e):
+        # La rueda sobre el fondo del panel también cambia de escritorio.
+        if not self.app.rueda(e):
+            e.ignore()
 
     def __init__(self, app):
         super().__init__()
@@ -3536,6 +3567,13 @@ class VentanaConfig(QWidget):
         c.setEnabled(ES_WINDOWS)
         c.toggled.connect(app.autoarranque)
         self.fila(lista, "Abrir al iniciar sesión", c, "Como administrador y sin aviso de Windows (tarea programada)")
+        lista = self.grupo(caja, "Escritorios virtuales")
+        c = QCheckBox()
+        c.setChecked(app.config.get("rueda_escritorios", True))
+        c.toggled.connect(lambda v: (app.config.__setitem__("rueda_escritorios", v), app.guardar_config()))
+        self.fila(lista, "Cambiar de escritorio con la rueda del ratón", c,
+                  "Girando la rueda sobre un widget (menos en las barras de volumen y similares). "
+                  "Con Ctrl + rueda abajo, se ven todos los escritorios.")
         lista = self.grupo(caja, "Widgets")
         ancho = QSpinBox()
         ancho.setRange(260, 560)
@@ -3670,6 +3708,7 @@ class Monitor:
         self.tarjetas = []
         self.aplicar_tema(guardar=False)
         self.discord = Discord(CARPETA)
+        self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
         self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
         self.discord_no_instalado = False
         self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
@@ -4871,6 +4910,30 @@ class Monitor:
         if self.discord.estado != "sin_config":
             menu.addAction(_("Desconectar de Discord (olvidar la autorización)"), self.discord.olvidar)
         menu.addSeparator()
+
+    def rueda(self, e):
+        """Rueda abajo: escritorio siguiente; arriba: el anterior; Ctrl + rueda abajo: todos
+        los escritorios. En los touchpads (giro
+        en trocitos) se acumula, y como mucho cambia uno cada 0,3 s."""
+        if not self.config.get("rueda_escritorios", True) or not ES_WINDOWS:
+            return False
+        delta = -e.angleDelta().y() / 120
+        if not delta:
+            return False
+        ahora = time.monotonic()
+        if ahora - self._rueda_ult > 0.6:  # un giro nuevo: lo de antes no cuenta
+            self._rueda = 0.0
+        self._rueda_ult = ahora
+        self._rueda += delta
+        if abs(self._rueda) >= 1 and ahora - self._rueda_t > 0.3:
+            if e.modifiers() & Qt.ControlModifier:
+                if self._rueda > 0:  # Ctrl + rueda abajo: la vista con todos los escritorios
+                    vista_escritorios()
+            else:
+                cambiar_escritorio(1 if self._rueda > 0 else -1)
+            self._rueda, self._rueda_t = 0.0, ahora
+        e.accept()
+        return True
 
     def menu_apps(self, menu, padre=None):
         v = self.apps_vista

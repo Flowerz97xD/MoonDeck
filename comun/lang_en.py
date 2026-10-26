@@ -484,4 +484,7 @@ TEXTOS = {
     'Fondo y borde': 'Background and border',
     'Sin fondo ni borde, del widget solo se ve su contenido.': "Without background or border, only the widget's content is shown.",
     'Mostrar la fecha': 'Show the date',
+    'Escritorios virtuales': 'Virtual desktops',
+    'Cambiar de escritorio con la rueda del ratón': 'Switch desktop with the mouse wheel',
+    'Girando la rueda sobre un widget (menos en las barras de volumen y similares). Con Ctrl + rueda abajo, se ven todos los escritorios.': 'Scrolling over a widget (except on volume bars and the like). Ctrl + scroll down shows all desktops.',
 }

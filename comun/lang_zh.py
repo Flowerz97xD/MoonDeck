@@ -484,4 +484,7 @@ TEXTOS = {
     'Fondo y borde': '背景和边框',
     'Sin fondo ni borde, del widget solo se ve su contenido.': '没有背景和边框时，只显示小组件的内容。',
     'Mostrar la fecha': '显示日期',
+    'Escritorios virtuales': '虚拟桌面',
+    'Cambiar de escritorio con la rueda del ratón': '用鼠标滚轮切换桌面',
+    'Girando la rueda sobre un widget (menos en las barras de volumen y similares). Con Ctrl + rueda abajo, se ven todos los escritorios.': '在小组件上滚动滚轮（音量条等除外）。按住 Ctrl 向下滚动可查看所有桌面。',
 }

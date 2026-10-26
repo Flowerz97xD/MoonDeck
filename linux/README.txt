@@ -190,6 +190,13 @@ button opens it minimized and, if you want, joins the last channel or the one
 with most people (Settings > Widgets > Discord).
 
 
+VIRTUAL DESKTOPS
+----------------
+Scroll the mouse wheel over a widget (except on volume bars and the like) to go
+to the next or previous desktop. Ctrl + scroll down shows all desktops. Turn it
+off in Settings > General.
+
+
 APPS
 ----
 A launcher with the icons of the apps you choose (it starts hidden: turn it on

@@ -484,4 +484,7 @@ TEXTOS = {
     'Fondo y borde': 'Hintergrund und Rahmen',
     'Sin fondo ni borde, del widget solo se ve su contenido.': 'Ohne Hintergrund und Rahmen ist nur der Inhalt des Widgets zu sehen.',
     'Mostrar la fecha': 'Datum anzeigen',
+    'Escritorios virtuales': 'Virtuelle Desktops',
+    'Cambiar de escritorio con la rueda del ratón': 'Desktop mit dem Mausrad wechseln',
+    'Girando la rueda sobre un widget (menos en las barras de volumen y similares). Con Ctrl + rueda abajo, se ven todos los escritorios.': 'Beim Scrollen über einem Widget (außer auf Lautstärkereglern u. Ä.). Strg + nach unten scrollen zeigt alle Desktops.',
 }

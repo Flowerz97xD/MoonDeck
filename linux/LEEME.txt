@@ -196,6 +196,13 @@ el boton "Abrir Discord" lo abre minimizado y, si quieres, te mete en el
 ultimo canal o donde haya mas gente (Configuracion > Widgets > Discord).
 
 
+ESCRITORIOS VIRTUALES
+---------------------
+Gira la rueda del raton sobre un widget (menos en las barras de volumen y
+similares) para pasar al escritorio siguiente o al anterior. Ctrl + rueda
+abajo muestra todos los escritorios. Se desactiva en Configuracion > General.
+
+
 APLICACIONES
 ------------
 Un lanzador con los iconos de las apps que elijas (llega oculto: activalo en

@@ -242,6 +242,13 @@ Nota: en el navegador, el control funciona con YouTube, Spotify Web, SoundCloud
 y la mayoria de webs de musica; alguna web puede no informar del progreso.
 
 
+ESCRITORIOS VIRTUALES
+---------------------
+Gira la rueda del raton sobre un widget (menos en las barras de volumen y
+similares) para pasar al escritorio siguiente o al anterior. Ctrl + rueda
+abajo muestra todos los escritorios. Se desactiva en Configuracion > General.
+
+
 APLICACIONES
 ------------
 Un lanzador con los iconos de las apps que elijas (llega oculto: activalo en

@@ -484,4 +484,7 @@ TEXTOS = {
     'Fondo y borde': 'Фон и рамка',
     'Sin fondo ni borde, del widget solo se ve su contenido.': 'Без фона и рамки видно только содержимое виджета.',
     'Mostrar la fecha': 'Показывать дату',
+    'Escritorios virtuales': 'Виртуальные рабочие столы',
+    'Cambiar de escritorio con la rueda del ratón': 'Переключать рабочий стол колесом мыши',
+    'Girando la rueda sobre un widget (menos en las barras de volumen y similares). Con Ctrl + rueda abajo, se ven todos los escritorios.': 'Прокрутка над виджетом (кроме ползунков громкости и т. п.). Ctrl + прокрутка вниз показывает все рабочие столы.',
 }
