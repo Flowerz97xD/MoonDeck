@@ -531,4 +531,8 @@ TEXTOS = {
     'Notificaciones': 'Уведомления',
     'Copia de la base de datos': 'Резервная копия БД',
     'Texto en fotos': 'Текст на фото',
+    'Apagar la IA': 'Выключить ИИ',
+    'Encender la IA': 'Включить ИИ',
+    'Parar todos': 'Остановить все',
+    'Iniciar todos': 'Запустить все',
 }

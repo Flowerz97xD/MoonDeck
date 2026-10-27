@@ -531,4 +531,8 @@ TEXTOS = {
     'Notificaciones': '通知',
     'Copia de la base de datos': '数据库备份',
     'Texto en fotos': '照片中的文字',
+    'Apagar la IA': '关闭 AI',
+    'Encender la IA': '开启 AI',
+    'Parar todos': '全部停止',
+    'Iniciar todos': '全部启动',
 }

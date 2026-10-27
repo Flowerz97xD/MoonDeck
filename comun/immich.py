@@ -72,11 +72,14 @@ class Immich:
 
     # --- API -------------------------------------------------------------------
 
-    def _api(self, ruta):
-        req = urllib.request.Request(self.url() + ruta, headers={
-            "x-api-key": self.cfg.get("clave", ""), "User-Agent": AGENTE, "Accept": "application/json"})
+    def _api(self, ruta, metodo="GET", cuerpo=None):
+        req = urllib.request.Request(self.url() + ruta, method=metodo, headers={
+            "x-api-key": self.cfg.get("clave", ""), "User-Agent": AGENTE, "Accept": "application/json",
+            **({"Content-Type": "application/json"} if cuerpo is not None else {})},
+            data=None if cuerpo is None else json.dumps(cuerpo).encode())
         with urllib.request.urlopen(req, timeout=15) as r:
-            return json.load(r)
+            datos = r.read()
+            return json.loads(datos) if datos else None
 
     def _opcional(self, *rutas):
         """La primera de las rutas que responda (cambian entre versiones de Immich), o None."""
@@ -124,6 +127,18 @@ class Immich:
         if colas is not None:
             datos["tareas"] = _tareas(colas)
         self._cambio(estado="ok", error=None, datos=datos)
+
+    def poner_ia(self, activa):
+        """Activa o desactiva el aprendizaje automático en los ajustes de Immich (para que, con
+        su contenedor parado, no intente usarlo). En segundo plano."""
+        def hacer():
+            try:
+                cfg = self._api("/api/system-config")
+                cfg.setdefault("machineLearning", {})["enabled"] = activa
+                self._api("/api/system-config", "PUT", cfg)
+            except (urllib.error.HTTPError, OSError, ValueError):
+                pass
+        threading.Thread(target=hacer, daemon=True).start()
 
     def instantanea(self):
         with self.lock:

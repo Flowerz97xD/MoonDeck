@@ -63,7 +63,8 @@ class Docker:
             texto = c.get("Status", "")
             salud = ("sano" if "(healthy)" in texto else "enfermo" if "(unhealthy)" in texto
                      else "arrancando" if "starting" in texto else None)
-            lista.append({"id": c.get("ID"), "nombre": c.get("Names", "?"), "estado": c.get("State", ""),
+            lista.append({"id": c.get("ID"), "nombre": c.get("Names", "?"), "imagen": c.get("Image", ""),
+                          "estado": c.get("State", ""),
                           "salud": salud, "desde": None, "cpu": None, "ram": None})
         # Desde cuándo está en marcha (o parado), para contarlo en el idioma de la app.
         r = _docker("inspect", "-f", "{{.Id}} {{.State.StartedAt}} {{.State.FinishedAt}}", *[c["id"] for c in lista]) \
@@ -92,11 +93,15 @@ class Docker:
         lista.sort(key=lambda c: (orden.get(c["estado"], 3), c["nombre"]))
         self._cambio(estado="ok", contenedores=lista)
 
-    def accion(self, nombre, orden):
-        """orden: "start", "stop" o "restart" (en segundo plano)."""
+    def accion(self, nombres, orden):
+        """orden: "start", "stop" o "restart", a uno o varios contenedores (en segundo plano)."""
+        nombres = [nombres] if isinstance(nombres, str) else list(nombres)
+        if not nombres:
+            return
+
         def hacer():
             try:
-                _docker(orden, nombre, timeout=120)
+                _docker(orden, *nombres, timeout=180)
             except (OSError, subprocess.SubprocessError):
                 pass
             self._despertar.set()
@@ -126,6 +131,11 @@ def hace(fecha):
     for tope, div, unidad in ((60, 1, "s"), (3600, 60, "min"), (86400, 3600, "h"), (float("inf"), 86400, "d")):
         if s < tope:
             return f"{int(s // div)} {unidad}"
+
+
+def buscar(contenedores, imagen):
+    """El contenedor cuya imagen contiene `imagen` (p. ej. "immich-machine-learning"), o None."""
+    return next((c for c in contenedores if imagen in c.get("imagen", "")), None)
 
 
 def color(c):

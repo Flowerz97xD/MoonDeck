@@ -35,7 +35,8 @@ LOG = os.path.join(CARPETA, "error.log")
 os.makedirs(CARPETA, exist_ok=True)
 import instancia  # noqa: E402
 if not instancia.unica(CARPETA):
-    sys.exit(0)  # ya hay un MoonDeck abierto
+    sys.exit(0)  # ya hay un MoonDeck abierto: se le ha pedido que se muestre
+instancia.quieren_verme(CARPETA)  # un aviso viejo, de antes de abrir esta
 _log = open(LOG, "w", encoding="utf-8", buffering=1)
 faulthandler.enable(_log)  # también registra cierres bruscos
 
@@ -4053,6 +4054,8 @@ class Monitor:
         im["lista_usuarios"] = c.add_w(caja(True, 2), prescindible=3)
         im["tareas"] = c.add_w(etiqueta("", "dim", envolver=True), prescindible=2)
         im["pie"] = c.add_w(etiqueta("", "dim"), prescindible=5)
+        im["ia"] = c.add_w(boton_texto("", "normal"))
+        im["ia"].connect("clicked", lambda _b: self.alternar_ia())
         im["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         im["conectar"] = c.add_w(boton_texto("Conectar con Immich…", "principal"))
         im["conectar"].connect("clicked", lambda _b: self.conectar_immich())
@@ -4063,6 +4066,8 @@ class Monitor:
         dk = {"version": None, "filas": {}, "orden": None}
         dk["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         dk["lista"] = c.add_w(caja(True, 6))
+        dk["todo"] = c.add_w(boton_texto("", "normal"))
+        dk["todo"].connect("clicked", lambda _b: self.alternar_docker())
         dk["tarjeta"] = c
         self.dk = dk
         GLib.timeout_add(1000, self.actualizar_extras)
@@ -4160,6 +4165,28 @@ class Monitor:
             self.immich.configurar(dlg.url.get_text(), dlg.clave.get_text())
         dlg.destroy()
 
+    def alternar_ia(self):
+        """Para o arranca el contenedor de la IA de Immich (y la activa o desactiva en Immich)."""
+        ml = contenedores.buscar(self.docker.instantanea()["contenedores"], "immich-machine-learning")
+        if not ml:
+            return
+        encendida = ml["estado"] == "running"
+        self.docker.accion(ml["nombre"], "stop" if encendida else "start")
+        self.immich.poner_ia(not encendida)
+
+    def alternar_docker(self):
+        """Para todos los contenedores en marcha o vuelve a arrancar los que se pararon así."""
+        lista = self.docker.instantanea()["contenedores"]
+        en_marcha = [c["nombre"] for c in lista if c["estado"] == "running"]
+        if en_marcha:
+            self.config["docker_parados"] = en_marcha
+            self.docker.accion(en_marcha, "stop")
+        else:
+            nombres = {c["nombre"] for c in lista}
+            self.docker.accion([n for n in self.config.pop("docker_parados", []) if n in nombres]
+                               or list(nombres), "start")
+        self.guardar_config()
+
     def menu_docker(self, menu):
         nombre, self.docker_sel = self.docker_sel, None
         c = next((c for c in self.docker.instantanea()["contenedores"] if c["nombre"] == nombre), None)
@@ -4173,6 +4200,10 @@ class Monitor:
             menu.append(Gtk.SeparatorMenuItem())
 
     def actualizar_extras(self):
+        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
+            for v in self.ventanas():
+                v.set_visible(True)
+                v.present()
         self.actualizar_immich()
         self.actualizar_docker()
         return True
@@ -4180,9 +4211,16 @@ class Monitor:
     def actualizar_immich(self):
         im = self.im
         s = self.immich.instantanea()
-        if s["version"] == im["version"]:
+        dk = self.docker.instantanea()
+        if (s["version"], dk["version"]) == im["version"]:
             return
-        im["version"] = s["version"]
+        im["version"] = (s["version"], dk["version"])
+        ml = contenedores.buscar(dk["contenedores"], "immich-machine-learning")
+        if ml:
+            encendida = ml["estado"] == "running"
+            im["ia"].set_label(_("Apagar la IA") if encendida else _("Encender la IA"))
+            clases(im["ia"], marcado=not encendida)
+        im["ia"].set_visible(bool(ml))
         estado, d = s["estado"], s["datos"]
         aviso = {"sin_config": _("Conecta el widget con tu Immich (clave de API de administrador)."),
                  "conectando": _("Conectando con Immich…")}.get(estado, "")
@@ -4254,6 +4292,9 @@ class Monitor:
         for c in s["contenedores"]:
             dk["filas"][c["nombre"]].actualizar(c)
         dk["lista"].set_visible(bool(nombres))
+        dk["todo"].set_label(_("Parar todos") if any(c["estado"] == "running" for c in s["contenedores"])
+                             else _("Iniciar todos"))
+        dk["todo"].set_visible(bool(nombres))
         self.ajustar_alturas()
 
     # --- aplicaciones ---------------------------------------------------------------
@@ -4488,7 +4529,7 @@ class Monitor:
             self.medir_area(monitor, colocar)
         self.discord.permitir(any(t.clave == "discord" for t in self.visibles()))
         self.immich.permitir(any(t.clave == "immich" for t in self.visibles()))
-        self.docker.permitir(any(t.clave == "docker" for t in self.visibles()))
+        self.docker.permitir(any(t.clave in ("docker", "immich") for t in self.visibles()))  # Immich: su IA
         self.rehacer_bandeja()
 
     def ventana_para(self, tarjeta, encima, monitor, pos=None):

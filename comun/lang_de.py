@@ -531,4 +531,8 @@ TEXTOS = {
     'Notificaciones': 'Benachrichtigungen',
     'Copia de la base de datos': 'Datenbank-Backup',
     'Texto en fotos': 'Text in Fotos',
+    'Apagar la IA': 'KI ausschalten',
+    'Encender la IA': 'KI einschalten',
+    'Parar todos': 'Alle stoppen',
+    'Iniciar todos': 'Alle starten',
 }

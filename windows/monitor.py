@@ -38,7 +38,8 @@ LOG = os.path.join(CARPETA, "error.log")
 os.makedirs(CARPETA, exist_ok=True)
 import instancia  # noqa: E402
 if not instancia.unica(CARPETA):
-    sys.exit(0)  # ya hay un MoonDeck abierto
+    sys.exit(0)  # ya hay un MoonDeck abierto: se le ha pedido que se muestre
+instancia.quieren_verme(CARPETA)  # un aviso viejo, de antes de abrir esta
 _log = open(LOG, "w", encoding="utf-8", buffering=1)
 if sys.stderr is None:
     sys.stderr = _log
@@ -4177,6 +4178,9 @@ class Monitor:
         im["tareas"] = c.add(etiqueta("", "dim"), prescindible=2)
         im["tareas"].setWordWrap(True)
         im["pie"] = c.add(etiqueta("", "dim"), prescindible=5)
+        im["ia"] = c.add(QPushButton())
+        im["ia"].setCursor(Qt.PointingHandCursor)
+        im["ia"].clicked.connect(self.alternar_ia)
         im["aviso"] = c.add(etiqueta("", "dim"))
         im["aviso"].setWordWrap(True)
         im["conectar"] = c.add(QPushButton(_("Conectar con Immich…")))
@@ -4184,7 +4188,7 @@ class Monitor:
         im["conectar"].setCursor(Qt.PointingHandCursor)
         im["conectar"].clicked.connect(lambda: self.conectar_immich(c.window()))
         self.im = im
-        self.t_extras = QTimer(self)
+        self.t_extras = QTimer()  # Monitor no es un QObject: el temporizador va sin padre
         self.t_extras.timeout.connect(self.actualizar_extras)
         self.t_extras.start(1000)
 
@@ -4198,6 +4202,9 @@ class Monitor:
         dk["caja"].setContentsMargins(0, 0, 0, 0)
         dk["caja"].setSpacing(6)
         c.add(dk["lista"])
+        dk["todo"] = c.add(QPushButton())
+        dk["todo"].setCursor(Qt.PointingHandCursor)
+        dk["todo"].clicked.connect(self.alternar_docker)
         dk["tarjeta"] = c
         self.dk = dk
         self.actualizar_velocidad()
@@ -4372,7 +4379,7 @@ class Monitor:
                 t.ventana.show()
         self.discord.permitir(any(t.clave == "discord" for t in self.visibles()))
         self.immich.permitir(any(t.clave == "immich" for t in self.visibles()))
-        self.docker.permitir(any(t.clave == "docker" for t in self.visibles()))
+        self.docker.permitir(any(t.clave in ("docker", "immich") for t in self.visibles()))  # Immich: su IA
 
     def ventana_para(self, tarjeta, encima, pos=None):
         if tarjeta.parent():
@@ -5072,6 +5079,28 @@ class Monitor:
         if dlg.exec() == QDialog.Accepted:
             self.immich.configurar(dlg.url.text(), dlg.clave.text())
 
+    def alternar_ia(self):
+        """Para o arranca el contenedor de la IA de Immich (y la activa o desactiva en Immich)."""
+        ml = contenedores.buscar(self.docker.instantanea()["contenedores"], "immich-machine-learning")
+        if not ml:
+            return
+        encendida = ml["estado"] == "running"
+        self.docker.accion(ml["nombre"], "stop" if encendida else "start")
+        self.immich.poner_ia(not encendida)
+
+    def alternar_docker(self):
+        """Para todos los contenedores en marcha o vuelve a arrancar los que se pararon así."""
+        lista = self.docker.instantanea()["contenedores"]
+        en_marcha = [c["nombre"] for c in lista if c["estado"] == "running"]
+        if en_marcha:
+            self.config["docker_parados"] = en_marcha
+            self.docker.accion(en_marcha, "stop")
+        else:
+            nombres = {c["nombre"] for c in lista}
+            self.docker.accion([n for n in self.config.pop("docker_parados", []) if n in nombres]
+                               or list(nombres), "start")
+        self.guardar_config()
+
     def menu_docker(self, menu):
         nombre, self.docker_sel = self.docker_sel, None
         c = next((c for c in self.docker.instantanea()["contenedores"] if c["nombre"] == nombre), None)
@@ -5085,15 +5114,25 @@ class Monitor:
             menu.addSeparator()
 
     def actualizar_extras(self):
+        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
+            for v in self.ventanas():
+                v.setVisible(True)
+                v.raise_()
+                v.activateWindow()
         self.actualizar_immich()
         self.actualizar_docker()
 
     def actualizar_immich(self):
         im = self.im
         s = self.immich.instantanea()
-        if s["version"] == im["version"]:
+        dk = self.docker.instantanea()
+        if (s["version"], dk["version"]) == im["version"]:
             return
-        im["version"] = s["version"]
+        im["version"] = (s["version"], dk["version"])
+        ml = contenedores.buscar(dk["contenedores"], "immich-machine-learning")
+        if ml:
+            im["ia"].setText(_("Apagar la IA") if ml["estado"] == "running" else _("Encender la IA"))
+        im["ia"].setVisible(bool(ml))
         estado, d = s["estado"], s["datos"]
         aviso = {"sin_config": _("Conecta el widget con tu Immich (clave de API de administrador)."),
                  "conectando": _("Conectando con Immich…")}.get(estado, "")
@@ -5164,6 +5203,9 @@ class Monitor:
         for c in s["contenedores"]:
             dk["filas"][c["nombre"]].actualizar(c)
         dk["lista"].setVisible(bool(nombres))
+        dk["todo"].setText(_("Parar todos") if any(c["estado"] == "running" for c in s["contenedores"])
+                           else _("Iniciar todos"))
+        dk["todo"].setVisible(bool(nombres))
         self.ajustar_alturas()
 
     def menu_apps(self, menu, padre=None):
