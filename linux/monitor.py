@@ -515,18 +515,6 @@ class Barra(Dibujo):
             cr.fill()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 class BarrasNucleos(Dibujo):
     """Barras verticales de uso por núcleo."""
 
@@ -847,25 +835,11 @@ class FilaVolumen(Gtk.Box):
             self._icono()
 
 
-# ---------------------------------------------------------------------------
-# Discord: canal de voz
-# ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
 def abrir_web(url):
     try:
         Gio.AppInfo.launch_default_for_uri(url, None)
     except GLib.Error as e:
         log("No se pudo abrir", url, e)
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -898,8 +872,6 @@ def pintar_icono(cr, widget, nombre, x, y, tam):
         Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
         cr.paint()
         cr.restore()
-
-
 
 
 class PronosticoHoras(Dibujo):
@@ -1100,7 +1072,6 @@ DISCORD_POR_DEFECTO = {"al_abrir": "nada", "servidores": []}
 
 RELOJ_POR_DEFECTO = {"estilo": "digital", "h24": True, "segundos": True, "fecha": True,
                      "zonas": ["Europe/Madrid", "America/New_York", "America/Mexico_City", "Asia/Tokyo"]}
-
 
 
 class RelojVista(Dibujo):
@@ -1350,14 +1321,6 @@ TIPOS_SENSOR = {
 MAX_SENSORES = 40
 
 
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Estilo (CSS de GTK)
 # ---------------------------------------------------------------------------
@@ -1570,6 +1533,20 @@ class Tarjeta(Gtk.EventBox):
                     w.set_visible(ver)
                 return False
             self._ajuste = GLib.idle_add(aplicar)
+
+    def poner_esquina(self, w):
+        """Un botón pequeño a la derecha del título (p. ej. silenciar si el volumen no cabe).
+        Se ve solo cuando quien lo pone lo muestra."""
+        cab = caja(False, 6)
+        self.contenido.remove(self.lb_titulo)
+        cab.pack_start(self.lb_titulo, True, True, 0)
+        w.set_no_show_all(True)
+        w.set_valign(Gtk.Align.CENTER)
+        cab.pack_end(w, False, False, 0)
+        cab.show()
+        self.contenido.pack_start(cab, False, False, 0)
+        self.contenido.reorder_child(cab, 0)
+        return w
 
     def prescindibles_grupo(self, grupo, widgets, base):
         """Filas que se crean sobre la marcha (p. ej. una por app): se quitan en el orden de
@@ -2414,7 +2391,6 @@ def texto_actualizacion(a):
     return "", _("Buscar actualizaciones"), "buscar"
 
 
-
 class VentanaConfig(Gtk.Window):
     """Temas, colores, fuentes, fondos, disposición por defecto y ajustes generales.
     Todo se aplica al momento."""
@@ -2665,6 +2641,10 @@ class VentanaConfig(Gtk.Window):
             sw = Gtk.Switch(active=bool(o[clave]))
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
+        nixie = Gtk.ColorButton(rgba=Gdk.RGBA(*hex_rgb(o.get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
+        nixie.connect("color-set", lambda b: app.cambiar_reloj(nixie=temas.a_hex(
+            (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
+        self.fila(lista, "Color de los tubos Nixie", nixie)
 
         packs.llamar(app.packs, "ajustes", self, cont)
 
@@ -3105,7 +3085,20 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         m["nada"] = c.add_w(etiqueta("No está sonando nada.", "dim"))
         m["seccion_vol"] = c.add_w(etiqueta("VOLUMEN", "seccion"))
         m["seccion_vol"].set_margin_top(8)
-        c.add_w(m["volumen"])
+        # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas);
+        # entonces sale arriba a la derecha un botón para silenciar el volumen general.
+        m["scroll_vol"] = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
+        m["scroll_vol"].set_propagate_natural_height(True)
+        m["scroll_vol"].set_min_content_height(30)
+        m["scroll_vol"].add(m["volumen"])
+        m["scroll_vol"].get_child().set_shadow_type(Gtk.ShadowType.NONE)
+        c.add_w(m["scroll_vol"], expand=True)
+        m["silenciar"] = c.poner_esquina(boton_icono("audio-volume-high-symbolic", Gtk.IconSize.MENU))
+        m["silenciar"].set_tooltip_text(_("Silenciar"))
+        m["silenciar"].connect("clicked", lambda _b: m["filas_vol"] and (m["filas_vol"][0]._mute(None),
+                                                                         self.esquina_multimedia()))
+        m["scroll_vol"].get_vadjustment().connect("changed", lambda _a: self.esquina_multimedia())
         m["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         m["tarjeta"] = c
         self.multimedia = m
@@ -3760,7 +3753,22 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         ciudades = self.submenu(menu, "Ciudades (reloj mundial, hasta 8)")
         for nombre, zona in CIUDADES:
             self.item(ciudades, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in o["zonas"])
+        if o["estilo"] == "nixie":
+            actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
+            sub = self.submenu(menu, "Color de los tubos")
+            for color, nombre in esferas.COLORES_NIXIE:
+                self.item(sub, nombre, lambda c=color: self.cambiar_reloj(nixie=c), actual == color)
+            self.item(sub, "Otro color…", self.elegir_color_nixie)
         menu.append(Gtk.SeparatorMenuItem())
+
+    def elegir_color_nixie(self):
+        d = Gtk.ColorChooserDialog(title=_("Color de los tubos"))
+        d.set_use_alpha(False)
+        d.set_rgba(Gdk.RGBA(*hex_rgb(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
+        if d.run() == Gtk.ResponseType.OK:
+            c = d.get_rgba()
+            self.cambiar_reloj(nixie=temas.a_hex((c.red, c.green, c.blue)))
+        d.destroy()
 
     def mover_calendario(self, meses):
         if meses:
@@ -3986,18 +3994,28 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 m["filas_vol"] += [FilaVolumen(self.mezclador, nombre, nombre) for nombre, _x, _x in apps]
                 for f in m["filas_vol"]:
                     m["volumen"].pack_start(f, False, False, 0)
-                m["tarjeta"].prescindibles_grupo("volumen", m["filas_vol"][::-1], 1)
             m["filas_vol"][0].actualizar(*datos["general"])
             for f, (_x, vol, mute) in zip(m["filas_vol"][1:], apps):
                 f.actualizar(vol, mute)
             poner_texto(m["seccion_vol"], _("VOLUMEN") + f" · {datos['dispositivo'].upper()}")
-        m["volumen"].set_visible(bool(datos))
+        m["scroll_vol"].set_visible(bool(datos))
         m["seccion_vol"].set_visible(bool(datos))
         errores = [e for e in (self.reproductores.error, self.mezclador.error) if e]
         poner_texto(m["aviso"], "\n".join(errores))
         m["aviso"].set_visible(bool(errores))
+        self.esquina_multimedia()
         self.ajustar_alturas()
         return True
+
+    def esquina_multimedia(self):
+        """El botón de silenciar de la esquina: solo si la lista del volumen no se ve entera."""
+        m = self.multimedia
+        adj = m["scroll_vol"].get_vadjustment()
+        general = m["filas_vol"][0] if m["filas_vol"] and m["scroll_vol"].get_visible() else None
+        m["silenciar"].set_visible(bool(general) and adj.get_upper() > adj.get_page_size() + 1)
+        if general:
+            poner_icono(m["silenciar"], "audio-volume-muted-symbolic" if general.silenciado
+                        else "audio-volume-high-symbolic", Gtk.IconSize.MENU)
 
 
 PROVEEDOR = None  # CSS de la app; se recarga al cambiar el tema

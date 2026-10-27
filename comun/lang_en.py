@@ -558,4 +558,13 @@ TEXTOS = {
     'Un lanzador con tus aplicaciones.': 'A launcher with your apps.',
     'Minijuegos para los ratos muertos.': 'Mini-games for idle moments.',
     'Para quien tiene un servidor en casa: Immich y contenedores de Docker.': 'For those with a home server: Immich and Docker containers.',
+    'Color de los tubos': 'Tube color',
+    'Otro color…': 'Other color…',
+    'Color de los tubos Nixie': 'Nixie tube color',
+    'Naranja': 'Orange',
+    'Azul hielo': 'Ice blue',
+    'Verde': 'Green',
+    'Rosa': 'Pink',
+    'Violeta': 'Violet',
+    'Rojo': 'Red',
 }

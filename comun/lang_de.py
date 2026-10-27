@@ -558,4 +558,13 @@ TEXTOS = {
     'Un lanzador con tus aplicaciones.': 'Ein Starter mit deinen Apps.',
     'Minijuegos para los ratos muertos.': 'Minispiele für zwischendurch.',
     'Para quien tiene un servidor en casa: Immich y contenedores de Docker.': 'Für alle mit einem Heimserver: Immich und Docker-Container.',
+    'Color de los tubos': 'Röhrenfarbe',
+    'Otro color…': 'Andere Farbe…',
+    'Color de los tubos Nixie': 'Farbe der Nixie-Röhren',
+    'Naranja': 'Orange',
+    'Azul hielo': 'Eisblau',
+    'Verde': 'Grün',
+    'Rosa': 'Pink',
+    'Violeta': 'Violett',
+    'Rojo': 'Rot',
 }

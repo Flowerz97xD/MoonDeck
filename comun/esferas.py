@@ -276,11 +276,25 @@ def _binario(l, pal, w, h, ahora, o, fecha):
     _pie(l, pal, w, h, alto_fecha, fecha, ahora, o)
 
 
-NARANJA_NIXIE = (1.0, 0.52, 0.16)
+NIXIE_POR_DEFECTO = "#ff8529"  # el naranja del neón de verdad
+# Colores para elegir rápido (clic derecho en el reloj); en Configuración, cualquiera.
+COLORES_NIXIE = (("#ff8529", "Naranja"), ("#5ad1ff", "Azul hielo"), ("#4dff88", "Verde"),
+                 ("#ff4fa3", "Rosa"), ("#b77bff", "Violeta"), ("#ff4040", "Rojo"))
+
+
+def _rgb(hexa):
+    hexa = (hexa or NIXIE_POR_DEFECTO).lstrip("#")
+    try:
+        return tuple(int(hexa[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return _rgb(NIXIE_POR_DEFECTO)
 
 
 def _nixie(l, pal, w, h, ahora, o, fecha):
-    """Tubos Nixie: cristal oscuro, la cifra "fantasma" y la de verdad brillando en naranja."""
+    """Tubos Nixie: cristal oscuro, la cifra "fantasma" y la de verdad brillando (naranja,
+    o el color que se elija en o["nixie"])."""
+    color = _rgb(o.get("nixie"))
+    nucleo = mezcla(color, (1, 1, 1), 0.4)  # el centro de la cifra, casi blanco
     partes = _digitos(ahora, o)
     alto_fecha = _alto_fecha(o, h, 150, 18)
     zona = h - 2 * alto_fecha - 4
@@ -298,18 +312,18 @@ def _nixie(l, pal, w, h, ahora, o, fecha):
             r = ancho_tubo * 0.42
             l.rect(x, y, ancho_tubo, alto_tubo, r, (0.10, 0.07, 0.06, 0.75))
             l.rect(x + 1, y + 1, ancho_tubo - 2, alto_tubo * 0.35, r, (1, 1, 1, 0.05))  # reflejo del cristal
-            l.texto("8", x, y, ancho_tubo, alto_tubo, px, (1.0, 0.6, 0.3, 0.08), "normal")
+            l.texto("8", x, y, ancho_tubo, alto_tubo, px, con_alfa(mezcla(color, (1, 1, 1), 0.15), 0.08), "normal")
             # Brillo: la cifra repetida alrededor con poca opacidad.
             halo = max(1.0, px * 0.035)
             for dx, dy in ((halo, 0), (-halo, 0), (0, halo), (0, -halo),
                            (halo * 0.7, halo * 0.7), (-halo * 0.7, -halo * 0.7)):
-                l.texto(c, x + dx, y + dy, ancho_tubo, alto_tubo, px, con_alfa(NARANJA_NIXIE, 0.18), "normal")
-            l.texto(c, x, y, ancho_tubo, alto_tubo, px, (1.0, 0.78, 0.5), "normal")
+                l.texto(c, x + dx, y + dy, ancho_tubo, alto_tubo, px, con_alfa(color, 0.18), "normal")
+            l.texto(c, x, y, ancho_tubo, alto_tubo, px, nucleo, "normal")
             x += ancho_tubo + gap
         if k < len(partes) - 1:
             sep = ancho_tubo * 0.45
             for f in (0.36, 0.64):
-                l.circulo(x - gap / 2 + sep / 2, y + alto_tubo * f, max(1.5, ancho_tubo * 0.06), NARANJA_NIXIE)
+                l.circulo(x - gap / 2 + sep / 2, y + alto_tubo * f, max(1.5, ancho_tubo * 0.06), color)
             x += sep
     _pie(l, pal, w, h, alto_fecha, fecha, ahora, o)
 

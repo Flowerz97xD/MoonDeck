@@ -558,4 +558,13 @@ TEXTOS = {
     'Un lanzador con tus aplicaciones.': '放着你的应用的启动器。',
     'Minijuegos para los ratos muertos.': '打发时间的小游戏。',
     'Para quien tiene un servidor en casa: Immich y contenedores de Docker.': '适合有家庭服务器的人：Immich 和 Docker 容器。',
+    'Color de los tubos': '辉光管颜色',
+    'Otro color…': '其他颜色…',
+    'Color de los tubos Nixie': '辉光管时钟颜色',
+    'Naranja': '橙色',
+    'Azul hielo': '冰蓝',
+    'Verde': '绿色',
+    'Rosa': '粉色',
+    'Violeta': '紫色',
+    'Rojo': '红色',
 }

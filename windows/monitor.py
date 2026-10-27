@@ -573,8 +573,6 @@ class LienzoQt:
         self.p.drawText(QRectF(x + (w - tw) * h_al, y + (h - th) * v_al, tw, th), Qt.AlignCenter, texto)
 
 
-
-
 class BarraProgreso(QWidget):
     """Progreso de la canción o el vídeo: clic o arrastrar para ir a otro punto."""
 
@@ -669,8 +667,6 @@ def shiboken_vivo(w):
 def mezclar(a, b, t):
     return QColor(round(a.red() + (b.red() - a.red()) * t), round(a.green() + (b.green() - a.green()) * t),
                   round(a.blue() + (b.blue() - a.blue()) * t))
-
-
 
 
 class FilaReproductor(QWidget):
@@ -785,6 +781,35 @@ class FilaReproductor(QWidget):
             p.drawText(QRectF(0, 0, tam, tam), Qt.AlignCenter, "♪")
         p.end()
         return final
+
+
+class ListaDesplazable(QScrollArea):
+    """Una lista que se desplaza con la rueda si no cabe. Pide el alto de su contenido
+    (para que la tarjeta mida lo justo) pero se conforma con `minimo`."""
+
+    ESTIRA = True  # se queda con el alto que sobre en la tarjeta
+
+    def __init__(self, contenido, minimo=30):
+        super().__init__()
+        self.minimo = minimo
+        self.setWidget(contenido)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        contenido.setAutoFillBackground(False)
+        self.setStyleSheet(
+            "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"
+            "QScrollBar:vertical { width: 6px; background: transparent; margin: 0; }"
+            "QScrollBar::handle:vertical { background: rgba(255, 255, 255, 70); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }")
+
+    def sizeHint(self):
+        return QSize(super().sizeHint().width(), self.widget().sizeHint().height())
+
+    def minimumSizeHint(self):
+        return QSize(0, self.minimo)
 
 
 class FilaVolumen(QWidget):
@@ -1152,14 +1177,6 @@ ESTILO_DIALOGO = """
 """
 
 
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Widget de escritorio (una tarjeta = una ventana con cristal)
 # ---------------------------------------------------------------------------
@@ -1208,25 +1225,50 @@ def css_tema(t):
     return css
 
 
-def cambiar_escritorio(paso):
-    """Escritorio virtual siguiente (+1) o anterior (-1): pulsa Ctrl+Win+→/←."""
+def pulsar_teclas(*teclas):
+    """Pulsa las teclas a la vez (códigos virtuales) y las suelta en orden inverso, con su
+    código de tecla física: Windows no hace caso a Win+... si solo llega el código virtual."""
     if not ES_WINDOWS:
         return
-    teclas = (0x11, 0x5B, 0x27 if paso > 0 else 0x25)  # Ctrl, Win, flecha
+    user32 = ctypes.windll.user32
+    extendidas = {0x5B, 0x25, 0x26, 0x27, 0x28}  # Win y las flechas
     for t in teclas:
-        ctypes.windll.user32.keybd_event(t, 0, 0x1 if t in (0x25, 0x27) else 0, 0)
+        user32.keybd_event(t, user32.MapVirtualKeyW(t, 0), 0x1 if t in extendidas else 0, 0)
+        time.sleep(0.01)
     for t in reversed(teclas):
-        ctypes.windll.user32.keybd_event(t, 0, 0x2 | (0x1 if t in (0x25, 0x27) else 0), 0)  # soltar
+        user32.keybd_event(t, user32.MapVirtualKeyW(t, 0), 0x2 | (0x1 if t in extendidas else 0), 0)  # soltar
+
+
+def cambiar_escritorio(paso):
+    """Escritorio virtual siguiente (+1) o anterior (-1): pulsa Ctrl+Win+→/←."""
+    pulsar_teclas(0x11, 0x5B, 0x27 if paso > 0 else 0x25)
 
 
 def vista_escritorios():
     """La vista de tareas de Windows, con todos los escritorios: pulsa Win+Tab."""
-    if not ES_WINDOWS:
-        return
-    for t in (0x5B, 0x09):
-        ctypes.windll.user32.keybd_event(t, 0, 0, 0)
-    for t in (0x09, 0x5B):
-        ctypes.windll.user32.keybd_event(t, 0, 0x2, 0)
+    pulsar_teclas(0x5B, 0x09)
+
+
+def area_panel(pantalla):
+    """Dónde va el panel en una pantalla: sin tapar la barra de tareas. Si la barra se oculta
+    sola, se deja libre 1 px en su borde: un panel que tape la pantalla entera es para
+    Windows una app a pantalla completa, y la barra ya no sale al llevar el ratón al borde."""
+    g = pantalla.availableGeometry()
+    if g != pantalla.geometry() or not ES_WINDOWS:
+        return g
+
+    class DatosBarra(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint32), ("hWnd", ctypes.c_void_p), ("uCallbackMessage", ctypes.c_uint32),
+                    ("uEdge", ctypes.c_uint32), ("rc", ctypes.c_long * 4), ("lParam", ctypes.c_ssize_t)]
+    datos = DatosBarra(cbSize=ctypes.sizeof(DatosBarra))
+    ABM_GETTASKBARPOS = 5
+    try:
+        if not ctypes.windll.shell32.SHAppBarMessage(ABM_GETTASKBARPOS, ctypes.byref(datos)):
+            datos.uEdge = 3
+    except (OSError, AttributeError):
+        datos.uEdge = 3
+    # uEdge: 0 izquierda, 1 arriba, 2 derecha, 3 abajo
+    return g.adjusted(*{0: (1, 0, 0, 0), 1: (0, 1, 0, 0), 2: (0, 0, -1, 0)}.get(datos.uEdge, (0, 0, 0, -1)))
 
 
 class Tarjeta(QWidget):
@@ -1246,6 +1288,9 @@ class Tarjeta(QWidget):
         self.prescindibles = []   # lo que se quita si la tarjeta es muy baja (ver add)
         self._ajuste = False
         self._arrastre = None     # "mover" o "tam" mientras se edita el panel
+        self._pendiente = None    # la última posición del ratón aún sin aplicar al arrastre
+        self._t_arrastre = QTimer(self, singleShot=True, interval=16)
+        self._t_arrastre.timeout.connect(self._arrastrar)
         self.brillo = 1.0         # del neón (baja cuando parpadea)
         self._secuencia = []
         self._siguiente = time.monotonic() + random.uniform(1, 8)
@@ -1277,6 +1322,19 @@ class Tarjeta(QWidget):
         if prescindible:
             w._prescindible, w._quitado = prescindible, False
             self.prescindibles.append(w)
+        return w
+
+    def poner_esquina(self, w):
+        """Un botón pequeño a la derecha del título (p. ej. silenciar si el volumen no cabe).
+        Empieza oculto: lo muestra quien lo pone."""
+        cab = QWidget()
+        fila = QHBoxLayout(cab)
+        fila.setContentsMargins(0, 0, 0, 0)
+        fila.setSpacing(6)
+        self.caja.replaceWidget(self.lb_titulo, cab)
+        fila.addWidget(self.lb_titulo, 1)
+        fila.addWidget(w)
+        w.hide()
         return w
 
     def prescindibles_grupo(self, grupo, widgets, base):
@@ -1464,14 +1522,27 @@ class Tarjeta(QWidget):
         if not self.en_edicion():
             return
         pos = e.position().toPoint()
-        if self._arrastre == "mover":
-            self.app.panel.arrastre_mover(self, e.globalPosition().toPoint(), self._agarre)
-        elif self._arrastre == "tam":
-            self.app.panel.arrastre_tam(self, e.globalPosition().toPoint())
+        if self._arrastre:
+            # Como mucho unas 60 veces por segundo (los ratones mandan cientos de movimientos).
+            self._pendiente = e.globalPosition().toPoint()
+            if not self._t_arrastre.isActive():
+                self._t_arrastre.start()
         else:
             self.setCursor(Qt.SizeFDiagCursor if self.en_asa(pos) else Qt.SizeAllCursor)
 
+    def _arrastrar(self):
+        if self._pendiente is None or not self._arrastre:
+            return
+        pos, self._pendiente = self._pendiente, None
+        if self._arrastre == "mover":
+            self.app.panel.arrastre_mover(self, pos, self._agarre)
+        else:
+            self.app.panel.arrastre_tam(self, pos)
+
     def mouseReleaseEvent(self, e):
+        self._t_arrastre.stop()
+        self._pendiente = e.globalPosition().toPoint()
+        self._arrastrar()
         if self._arrastre == "mover":
             self.app.panel.soltar_mover(self, e.globalPosition().toPoint())
         elif self._arrastre == "tam":
@@ -1487,6 +1558,8 @@ class Tarjeta(QWidget):
         if e.button() == Qt.LeftButton and self.en_edicion():
             self._agarre = e.position().toPoint()
             self._arrastre = "tam" if self.en_asa(self._agarre) else "mover"
+            if self._arrastre == "mover":
+                self.raise_()
         elif e.button() == Qt.LeftButton and self.ventana:
             if self.app.modo == "widgets":
                 # Ya no se recolocan solos (tampoco al reiniciar) hasta "Recolocar widgets".
@@ -1749,7 +1822,9 @@ class VentanaPanel(QWidget):
         self.editando = False
         self.previa = None    # (fila, col, alto, ancho) donde caería el widget arrastrado
         self.setWindowTitle("MoonDeck")
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        # Ventana de herramienta (como los widgets sueltos): Windows la deja en todos los
+        # escritorios virtuales; se queda en su pantalla (colocar_en).
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.cristal = False
         self.aplicar_cristal()
@@ -1763,7 +1838,16 @@ class VentanaPanel(QWidget):
         self.update()
 
     def colocar_en(self, pantalla):
-        self.setGeometry(pantalla.geometry())
+        self.setGeometry(area_panel(pantalla))
+        # Si cambia la barra de tareas (se mueve, se oculta sola...), se vuelve a colocar.
+        if getattr(self, "_pantalla", None) is not pantalla:
+            if getattr(self, "_pantalla", None):
+                self._pantalla.availableGeometryChanged.disconnect(self._recolocar)
+            self._pantalla = pantalla
+            pantalla.availableGeometryChanged.connect(self._recolocar)
+
+    def _recolocar(self, *_x):
+        self.setGeometry(area_panel(self._pantalla))
 
     # --- modelo de la cuadrícula ----------------------------------------------
 
@@ -1961,11 +2045,19 @@ class VentanaPanel(QWidget):
     def arrastre_mover(self, tarjeta, pos_global, agarre):
         esquina = self.mapFromGlobal(pos_global) - agarre
         tarjeta.move(esquina)
-        tarjeta.raise_()
         _, _, h, w = self.celdas[tarjeta.clave]
         fila, col = self.celda_en(esquina)
-        self.previa = (min(fila, self.filas - 1), min(col, self.cols - w), h, w)
-        self.update()
+        self.poner_previa((min(fila, self.filas - 1), min(col, self.cols - w), h, w))
+
+    def poner_previa(self, previa):
+        """Cambia la vista previa repintando solo donde estaba y donde está (el panel ocupa
+        toda la pantalla: repintarlo entero a cada movimiento del ratón va a tirones)."""
+        if previa == self.previa:
+            return
+        for r in (self.previa, previa):
+            if r:
+                self.update(self.rect_celda(*r).adjusted(-4, -4, 4, 4))
+        self.previa = previa
 
     def soltar_mover(self, tarjeta, _pos_global):
         if self.previa:
@@ -1986,8 +2078,7 @@ class VentanaPanel(QWidget):
         cw, ch = self.tam_celda()
         ancho = max(1, min(round((p.x() - origen.x()) / (cw + self.HUECO)), self.cols - col))
         alto = max(1, min(round((p.y() - origen.y()) / (ch + self.HUECO)), self.MAX_ALTO))
-        self.previa = (fila, col, alto, ancho)
-        self.update()
+        self.poner_previa((fila, col, alto, ancho))
 
     def soltar_tam(self, tarjeta):
         if self.previa:
@@ -2140,8 +2231,6 @@ class CabeceraTiempo(QWidget):
             self.icono.setVisible(self.width() >= 220 and bool(self.icono.nombre))
 
 
-
-
 class PronosticoHoras(QWidget):
     """Las próximas horas: tantas como quepan a lo ancho."""
 
@@ -2272,14 +2361,6 @@ class PronosticoDias(QWidget):
             p.drawRoundedRect(QRectF(x1, by, max(x2 - x1, 4), 4), 2, 2)
 
 
-
-
-
-
-
-
-
-
 class DialogoCiudad(QDialog):
     """Buscar y elegir la ciudad del widget del tiempo."""
 
@@ -2329,20 +2410,6 @@ class DialogoCiudad(QDialog):
     def elegir(self, item):
         self.elegida = self.resultados[self.lista.row(item)]
         self.accept()
-
-
-# ---------------------------------------------------------------------------
-# Discord: canal de voz
-# ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2683,6 +2750,20 @@ class VentanaConfig(QWidget):
             ch.setChecked(bool(o[clave]))
             ch.toggled.connect(lambda v, c=clave: app.cambiar_reloj(**{c: v}))
             self.fila(lista, texto, ch)
+        nixie = QPushButton()
+        nixie.setFixedSize(44, 28)
+        nixie.setCursor(Qt.PointingHandCursor)
+
+        def pintar_nixie():
+            nixie.setStyleSheet(f"background: {o.get('nixie', esferas.NIXIE_POR_DEFECTO)}; "
+                                "border: 1px solid #555; border-radius: 6px;")
+
+        def elegir_nixie():
+            app.elegir_color_nixie(self)
+            pintar_nixie()
+        pintar_nixie()
+        nixie.clicked.connect(elegir_nixie)
+        self.fila(lista, "Color de los tubos Nixie", nixie)
 
         packs.llamar(app.packs, "ajustes", self, caja)
 
@@ -2964,8 +3045,6 @@ class VentanaConfig(QWidget):
         super().closeEvent(e)
 
 
-
-
 # Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
 PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
 
@@ -3147,7 +3226,15 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             m["caja_vol"] = QVBoxLayout(m["volumen"])
             m["caja_vol"].setContentsMargins(0, 0, 0, 0)
             m["caja_vol"].setSpacing(4)
-            c.add(m["volumen"])
+            m["caja_vol"].addStretch()
+            # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas);
+            # entonces sale arriba a la derecha un botón para silenciar el volumen general.
+            m["scroll_vol"] = c.add(ListaDesplazable(m["volumen"]))
+            m["silenciar"] = c.poner_esquina(boton_icono("volumen", 10))
+            m["silenciar"].setToolTip(_("Silenciar"))
+            m["silenciar"].clicked.connect(lambda: m["filas_vol"] and (m["filas_vol"][0]._mute(),
+                                                                       self.esquina_multimedia()))
+            m["scroll_vol"].verticalScrollBar().rangeChanged.connect(lambda *_x: self.esquina_multimedia())
             m["aviso"] = c.add(etiqueta("", "dim"))
             m["aviso"].setWordWrap(True)
             m["tarjeta"] = c
@@ -3725,7 +3812,21 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             a = ciudades.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
             a.setCheckable(True)
             a.setChecked(zona in o["zonas"])
+        if o["estilo"] == "nixie":
+            actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
+            sub = menu.addMenu(_("Color de los tubos"))
+            for color, nombre in esferas.COLORES_NIXIE:
+                a = sub.addAction(_(nombre), lambda _x=False, c=color: self.cambiar_reloj(nixie=c))
+                a.setCheckable(True)
+                a.setChecked(actual == color)
+            sub.addAction(_("Otro color…"), lambda: self.elegir_color_nixie())
         menu.addSeparator()
+
+    def elegir_color_nixie(self, padre=None):
+        c = QColorDialog.getColor(QColor(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), padre,
+                                  _("Color de los tubos"))
+        if c.isValid():
+            self.cambiar_reloj(nixie=c.name())
 
     def mover_calendario(self, meses):
         if meses:
@@ -4039,20 +4140,29 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                     f.deleteLater()
                 m["filas_vol"] = [FilaVolumen(self.mezclador, None, _("General"))]
                 m["filas_vol"] += [FilaVolumen(self.mezclador, nombre, nombre) for nombre, _x, _x in apps]
-                for f in m["filas_vol"]:
-                    m["caja_vol"].addWidget(f)
-                m["tarjeta"].prescindibles_grupo("volumen", m["filas_vol"][::-1], 1)
+                for i, f in enumerate(m["filas_vol"]):
+                    m["caja_vol"].insertWidget(i, f)  # antes del hueco final
+                m["scroll_vol"].updateGeometry()
             m["filas_vol"][0].actualizar(*datos["general"])
             for f, (_x, vol, mute) in zip(m["filas_vol"][1:], apps):
                 f.actualizar(vol, mute)
             m["seccion_vol"].setText(_("VOLUMEN") + f" · {datos['dispositivo'].upper()}")
             recortar(m["seccion_vol"], m["seccion_vol"].text(), ANCHO - 32)
-        m["volumen"].setVisible(bool(datos))
+        m["scroll_vol"].setVisible(bool(datos))
         m["seccion_vol"].setVisible(bool(datos))
         errores = [e for e in (self.reproductores.error, self.mezclador.error) if e]
         m["aviso"].setText("\n".join(errores))
         m["aviso"].setVisible(bool(errores))
+        self.esquina_multimedia()
         self.ajustar_alturas()
+
+    def esquina_multimedia(self):
+        """El botón de silenciar de la esquina: solo si la lista del volumen no se ve entera."""
+        m = self.multimedia
+        general = m["filas_vol"][0] if m["filas_vol"] and m["scroll_vol"].isVisibleTo(m["tarjeta"]) else None
+        m["silenciar"].setVisible(bool(general) and m["scroll_vol"].verticalScrollBar().maximum() > 0)
+        if general:
+            poner_icono(m["silenciar"], "silencio" if general.silenciado else "volumen", 10)
 
 
 def main():
