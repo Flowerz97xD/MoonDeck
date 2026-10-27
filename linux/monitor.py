@@ -33,6 +33,9 @@ if not os.path.exists(CARPETA) and os.path.isdir(_VIEJA):
     shutil.copytree(_VIEJA, CARPETA, ignore=shutil.ignore_patterns("error.log"))
 LOG = os.path.join(CARPETA, "error.log")
 os.makedirs(CARPETA, exist_ok=True)
+import instancia  # noqa: E402
+if not instancia.unica(CARPETA):
+    sys.exit(0)  # ya hay un MoonDeck abierto
 _log = open(LOG, "w", encoding="utf-8", buffering=1)
 faulthandler.enable(_log)  # también registra cierres bruscos
 
@@ -4457,6 +4460,7 @@ class Monitor:
             for t in self.tarjetas:  # las que salen del panel (o se ocultan) se quitan antes de repartir
                 if t not in en_panel and t.get_parent() is self.panel.lienzo:
                     self.panel.lienzo.remove(t)
+                    self.panel.lienzo.rects.pop(t, None)
             self.panel.repartir(en_panel)
             self.panel.show()
             for t in self.tarjetas:
