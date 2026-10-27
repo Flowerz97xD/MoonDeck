@@ -14,6 +14,8 @@ Two modes:
 
 Themes, colors, backgrounds and neon borders are changed from the Settings window.
 
+Widgets come in packs: **Basic** is always there; **Hardware**, **Discord**, **Desktop**, **Fun** and **Server** can be deleted in Settings > Packs and downloaded again whenever you want.
+
 Languages: English, Spanish, German, Chinese and Russian.
 
 ## Screenshots
@@ -52,6 +54,8 @@ Connecting the Discord widget: [docs/DISCORD.en.md](docs/DISCORD.en.md) (Spanish
 | `windows/` | Windows version: PySide6 (Qt), acrylic glass, LibreHardwareMonitor, PresentMon (FPS) and pycaw/WinRT for audio |
 | `secretos/` | **Not in Git.** `discord_client_secret.txt` with your Discord application's Client Secret |
 | `dist/` | **Not in Git.** The zips built by `construir.sh` |
+
+Each widget pack lives in its own `pack_<id>.py` (one in `linux/`, one in `windows/`); `comun/packs.py` lists the packs, loads them and deletes/downloads them.
 
 The code is written in Spanish; the UI strings are Spanish keys that `comun/idioma.py` translates with `comun/lang_*.py`.
 

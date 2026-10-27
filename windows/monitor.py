@@ -89,16 +89,10 @@ try:
                                    QTreeWidgetItem, QVBoxLayout, QWidget)
 
     from multimedia import Dispositivos, Mezclador, Reproductores
-    from velocidad import TestVelocidad
     import velocimetro
     import esferas
-    import juegos
-    import lanzador
-    import contenedores
-    from immich import URL_POR_DEFECTO as IMMICH_URL, Immich, tam_legible
-    import dino_sprite
+    import packs
     from sensores import ES_WINDOWS, Sampler
-    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord, abrir_discord
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import tema as temas
     import idioma
@@ -545,6 +539,8 @@ class LienzoQt:
         """Un trozo de la hoja del dinosaurio, escalado sin suavizar (pixel art)."""
         clave = tuple(round(c, 3) for c in tinta[:3]) if tinta else None
         if clave not in self._hojas:
+            import dino_sprite
+            import juegos
             img = QImage.fromData(dino_sprite.PNG).convertToFormat(QImage.Format_RGBA8888)
             w, h, fila = img.width(), img.height(), img.bytesPerLine()
             crudo = bytes(img.constBits())
@@ -577,105 +573,6 @@ class LienzoQt:
         self.p.drawText(QRectF(x + (w - tw) * h_al, y + (h - th) * v_al, tw, th), Qt.AlignCenter, texto)
 
 
-class VistaJuego(QWidget):
-    """El minijuego en marcha (juegos.py): le pasa el ratón y el teclado y lo redibuja
-    cuando lo pide (cada frame mientras se mueve algo, cada segundo con el cronómetro)."""
-
-    TECLAS = {Qt.Key_Left: "izquierda", Qt.Key_A: "izquierda", Qt.Key_Right: "derecha", Qt.Key_D: "derecha",
-              Qt.Key_Up: "arriba", Qt.Key_W: "arriba", Qt.Key_Down: "abajo", Qt.Key_S: "abajo",
-              Qt.Key_Space: "espacio", Qt.Key_N: "n"}
-    BOTONES = {Qt.LeftButton: 1, Qt.MiddleButton: 2, Qt.RightButton: 3}
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.setMinimumHeight(80)  # en una celda pequeña se dibuja en pequeño, sin cortar
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setFocusPolicy(Qt.ClickFocus)  # para las flechas y el espacio
-        self.timer = QTimer(self)
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self._frame)
-        cfg = app.config.setdefault("juegos", {})
-        self.poner(cfg.get("actual", "buscaminas"))
-
-    def sizeHint(self):
-        return QSize(ANCHO - 32, 280)
-
-    def poner(self, nombre):
-        cfg = self.app.config.setdefault("juegos", {})
-        cfg["actual"] = nombre
-        self.juego = juegos.crear(nombre, cfg.setdefault(nombre, {}), self.app.guardar_config)
-        self.update()
-        self._programar()
-
-    def nueva(self):
-        self.juego.nueva()
-        self.update()
-        self._programar()
-
-    def _programar(self):
-        ms = self.juego.siguiente_frame()
-        if ms and not self.timer.isActive() and self.isVisible():
-            self.timer.start(ms)
-
-    def _frame(self):
-        self.update()
-        self._programar()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._programar()
-
-    def _tarjeta(self):
-        w = self.parentWidget()
-        while w and not isinstance(w, Tarjeta):
-            w = w.parentWidget()
-        return w
-
-    def mousePressEvent(self, e):
-        tarjeta = self._tarjeta()
-        boton = self.BOTONES.get(e.button())
-        if not boton or (tarjeta and tarjeta.en_edicion()):
-            e.ignore()
-            return
-        pos = e.position()
-        usado = self.juego.pulsar(pos.x(), pos.y(), boton)
-        self.update()
-        self._programar()
-        if not (usado or boton == 1):
-            e.ignore()  # el clic derecho que no usa el juego abre el menú de la tarjeta
-
-    def mouseDoubleClickEvent(self, e):
-        self.mousePressEvent(e)  # en Qt el segundo clic rápido llega como doble clic
-
-    def mouseReleaseEvent(self, e):
-        boton = self.BOTONES.get(e.button())
-        pos = e.position()
-        if not boton or not self.juego.soltar(pos.x(), pos.y(), boton):
-            e.ignore()
-        self.update()
-        self._programar()
-
-    def _tecla(self, e, pulsada):
-        nombre = self.TECLAS.get(e.key())
-        if e.isAutoRepeat() and nombre in ("espacio", "arriba", "abajo"):
-            return  # mantener pulsado no repite el salto
-        if nombre and self.juego.tecla(nombre, pulsada):
-            self.update()
-            self._programar()
-        else:
-            e.ignore()
-
-    def keyPressEvent(self, e):
-        self._tecla(e, True)
-
-    def keyReleaseEvent(self, e):
-        self._tecla(e, False)
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        self.juego.dibujar(LienzoQt(self, p), paleta(), self.width(), self.height())
 
 
 class BarraProgreso(QWidget):
@@ -774,52 +671,6 @@ def mezclar(a, b, t):
                   round(a.blue() + (b.blue() - a.blue()) * t))
 
 
-class Velocimetro(QWidget):
-    """Test de velocidad como el velocímetro digital de un deportivo: arco de segmentos
-    que se encienden, la cifra en el centro y la fase encima."""
-
-    def __init__(self):
-        super().__init__()
-        self.setMinimumHeight(56)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.valor = 0.0        # lo que marca ahora (se anima hacia el objetivo)
-        self.objetivo = 0.0
-        self.tope = 100
-        self.texto = "—"        # la cifra del centro
-        self.unidad = "Mbps"
-        self.fase = ""          # rótulo de encima
-        self.color = "azul"
-        self.progreso = None    # 0-1 mientras mide (arco fino exterior)
-        self.estilo = "deportivo"
-        self.animacion = QTimer(self)
-        self.animacion.setInterval(16)
-        self.animacion.timeout.connect(self._animar)
-
-    def sizeHint(self):
-        return QSize(ANCHO - 32, 190)
-
-    def poner(self, valor, tope, texto, fase, color="azul", progreso=None, unidad="Mbps"):
-        self.objetivo = valor or 0.0
-        self.tope, self.texto, self.fase, self.color, self.progreso, self.unidad = (
-            tope, texto, fase, color, progreso, unidad)
-        if abs(self.objetivo - self.valor) > self.tope * 1e-4:
-            if not self.animacion.isActive():
-                self.animacion.start()
-        self.update()
-
-    def _animar(self):
-        self.valor += (self.objetivo - self.valor) * 0.14
-        if abs(self.objetivo - self.valor) <= self.tope * 1e-4:
-            self.valor = self.objetivo
-            self.animacion.stop()
-        self.update()
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        e = {"valor": self.valor, "tope": self.tope, "texto": self.texto, "fase": self.fase,
-             "color": self.color, "progreso": self.progreso, "unidad": self.unidad}
-        esferas.velocimetro(LienzoQt(self, p), paleta(), self.width(), self.height(), e, self.estilo)
 
 
 class FilaReproductor(QWidget):
@@ -1287,132 +1138,8 @@ TIPOS_SENSOR = {
 }
 MAX_SENSORES = 40
 
-
-def fmt_sensor(tipo, valor, color=True):
-    formato = TIPOS_SENSOR.get(tipo, (tipo, "{:.2f}"))[1]
-    if formato == "rpm":
-        return f"{valor:,.0f} RPM".replace(",", ".") if valor > 0 else _("parado")
-    if formato == "bytes/s":
-        return fmt_bytes(valor, True)
-    texto = formato.format(valor)
-    if color and tipo == "Temperature":
-        return f'<span style="color:{color_temp(valor)}">{texto}</span>'
-    return texto
-
-
-def seleccion_auto(sensores):
-    """Lo que se ve si no se ha elegido nada: temperaturas con sentido, y los
-    ventiladores de las GPUs (paran a 0 RPM en reposo) y los que giran (los
-    conectores vacíos de la placa marcan 0 siempre)."""
-    temps, por_dispositivo, vistos = [], {}, set()
-    for kind, hw, tipo, nombre, valor, ident in sensores:
-        if tipo != "Temperature" or "distance" in nombre.lower() or not 5 < valor < 115:
-            continue
-        # Como mucho dos por dispositivo (la placa tiene muchos) y sin repetidos.
-        if (hw, nombre) in vistos or por_dispositivo.get(hw, 0) >= 2:
-            continue
-        vistos.add((hw, nombre))
-        por_dispositivo[hw] = por_dispositivo.get(hw, 0) + 1
-        temps.append(ident)
-    fans = [x[5] for x in sensores if x[2] == "Fan" and (x[0].startswith("Gpu") or x[4] > 0)]
-    return temps[:12] + fans[:6]
-
-
-class ListaSensores(QWidget):
-    """Lista de sensores que se adapta al espacio: varias columnas si es ancha y, si
-    aun así no caben, los que quepan y "… y N más" (en vez de aplastar las filas)."""
-
-    FILA = 19
-    ANCHO_COLUMNA = 250
-    ANCHO_VALOR = 84
-
-    def __init__(self):
-        super().__init__()
-        self.lineas = []   # ("seccion", texto) o ("sensor", nombre, valor, color)
-        # Sin "alto para el ancho": Qt no deja bajar de ese alto, y en una celda pequeña
-        # tiene que poder encoger (enseña "… y N más").
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-    def set_lineas(self, lineas):
-        cambia_alto = len(lineas) != len(self.lineas)
-        self.lineas = lineas
-        if cambia_alto:
-            self.updateGeometry()
-        self.update()
-
-    def columnas(self, ancho):
-        return max(1, min(ancho // self.ANCHO_COLUMNA, len(self.lineas) or 1))
-
-    def alto_para(self, ancho):
-        return -(-len(self.lineas) // self.columnas(ancho)) * self.FILA
-
-    def sizeHint(self):
-        return QSize(ANCHO - 32, self.alto_para(ANCHO - 32))
-
-    def minimumSizeHint(self):
-        return QSize(100, self.FILA * 3)
-
-    @staticmethod
-    def huecos(lineas, por_columna):
-        """Posición (hueco) de cada línea: un título nunca queda el último de una
-        columna separado de sus sensores; pasa a la siguiente."""
-        posiciones, hueco = [], 0
-        for linea in lineas:
-            if linea[0] == "seccion" and hueco % por_columna == por_columna - 1:
-                hueco += 1
-            posiciones.append(hueco)
-            hueco += 1
-        return posiciones, hueco
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        cols = self.columnas(self.width())
-        maximo = max(1, self.height() // self.FILA)
-        lineas = self.lineas
-        # Columnas equilibradas: la altura mínima con la que todo cabe.
-        por_columna = -(-len(lineas) // cols) or 1
-        while por_columna < maximo and self.huecos(lineas, por_columna)[1] > cols * por_columna:
-            por_columna += 1
-        if por_columna > maximo or self.huecos(lineas, por_columna)[1] > cols * por_columna:
-            por_columna = maximo
-            while lineas and self.huecos(lineas, por_columna)[1] > cols * por_columna - 1:
-                lineas = lineas[:-1]
-            ocultas = sum(1 for x in self.lineas[len(lineas):] if x[0] == "sensor")
-            lineas = lineas + [("mas", _("… y {n} más (amplía el widget)").format(n=ocultas))]
-        posiciones, _x = self.huecos(lineas, por_columna)
-        ancho_col = (self.width() - 16 * (cols - 1)) / cols
-        normal = QFont(self.font())
-        normal.setPointSizeF(9.5)
-        seccion = QFont(normal)
-        seccion.setPointSizeF(7.5)
-        seccion.setBold(True)
-        for i, linea in zip(posiciones, lineas):
-            x = (i // por_columna) * (ancho_col + 16)
-            y = (i % por_columna) * self.FILA
-            caja = QRectF(x, y, ancho_col, self.FILA)
-            if linea[0] == "seccion":
-                p.setFont(seccion)
-                p.setPen(QColor(C_TITULO))
-                p.drawText(caja, Qt.AlignLeft | Qt.AlignBottom, linea[1])
-            elif linea[0] == "mas":
-                p.setFont(normal)
-                p.setPen(QColor(C_SEC))
-                p.drawText(caja.adjusted(0, 0, 400, 0), Qt.AlignLeft | Qt.AlignVCenter, linea[1])
-            else:
-                _x, nombre, valor, color = linea
-                p.setFont(normal)
-                p.setPen(QColor(color))
-                p.drawText(caja, Qt.AlignRight | Qt.AlignVCenter, valor)
-                p.setPen(QColor(C_NORMAL))
-                ancho_nombre = int(ancho_col - self.ANCHO_VALOR)
-                p.drawText(caja.adjusted(0, 0, -self.ANCHO_VALOR, 0), Qt.AlignLeft | Qt.AlignVCenter,
-                           p.fontMetrics().elidedText(nombre, Qt.ElideRight, ancho_nombre))
-
-
-class SelectorSensores(QDialog):
-    """Ventana para marcar qué sensores se muestran, agrupados por dispositivo y tipo."""
-
-    ESTILO = """
+# Estilo de los diálogos (elegir sensores, ciudad, apps...)
+ESTILO_DIALOGO = """
     QDialog { background: #1b1e25; }
     QLabel { color: #d0d6e0; }
     QLineEdit { background: #262a33; color: #f2f4f8; border: 1px solid #3a3f4b; border-radius: 6px; padding: 6px 8px; }
@@ -1422,97 +1149,15 @@ class SelectorSensores(QDialog):
     QPushButton { background: #2c313b; color: #e6e9ef; border: none; border-radius: 6px; padding: 7px 14px; }
     QPushButton:hover { background: #363c48; }
     QPushButton#aceptar { background: #4d8dff; color: white; font-weight: 600; }
-    """
+"""
 
-    def __init__(self, sensores, seleccion, padre=None):
-        super().__init__(padre)
-        self.setWindowTitle(_("Elegir sensores"))
-        self.setStyleSheet(self.ESTILO)
-        self.resize(600, 680)
-        self.por_defecto = False
-        caja = QVBoxLayout(self)
-        caja.addWidget(QLabel(_("Marca los sensores que quieres ver en el widget Sensores "
-                                "(hasta {n}).").format(n=MAX_SENSORES)))
-        self.buscar = QLineEdit()
-        self.buscar.setPlaceholderText(_("Buscar: «cpu», «voltaje», «fan», «nvme»…"))
-        self.buscar.textChanged.connect(self.filtrar)
-        caja.addWidget(self.buscar)
 
-        self.arbol = QTreeWidget()
-        self.arbol.setHeaderLabels([_("Sensor"), _("Valor")])
-        self.arbol.setColumnWidth(0, 420)
-        marcados = set(seleccion)
-        dispositivos = {}
-        for kind, hw, tipo, nombre, valor, ident in sensores:
-            disp = dispositivos.get(hw)
-            if disp is None:
-                disp = dispositivos[hw] = QTreeWidgetItem(self.arbol, [hw])
-                disp.setFlags(disp.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
-                disp.secciones = {}
-            seccion_txt = _(TIPOS_SENSOR.get(tipo, (tipo,))[0])
-            seccion = disp.secciones.get(seccion_txt)
-            if seccion is None:
-                seccion = disp.secciones[seccion_txt] = QTreeWidgetItem(disp, [seccion_txt])
-                seccion.setFlags(seccion.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
-            item = QTreeWidgetItem(seccion, [nombre, fmt_sensor(tipo, valor, color=False)])
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(0, Qt.Checked if ident in marcados else Qt.Unchecked)
-            item.ident = ident
-            item.busqueda = f"{hw} {seccion_txt} {tipo} {nombre}".lower()
-        for disp in dispositivos.values():
-            # Abiertos los grupos con algo marcado, para ver de un vistazo lo elegido.
-            disp.setExpanded(disp.checkState(0) != Qt.Unchecked)
-            for seccion in disp.secciones.values():
-                seccion.setExpanded(seccion.checkState(0) != Qt.Unchecked)
-        caja.addWidget(self.arbol, 1)
 
-        botones = QHBoxLayout()
-        for texto, fn in ((_("Por defecto"), self.restablecer), (_("Ninguno"), self.ninguno)):
-            b = QPushButton(texto)
-            b.clicked.connect(fn)
-            botones.addWidget(b)
-        botones.addStretch()
-        cancelar = QPushButton(_("Cancelar"))
-        cancelar.clicked.connect(self.reject)
-        aceptar = QPushButton(_("Aceptar"))
-        aceptar.setObjectName("aceptar")
-        aceptar.clicked.connect(self.accept)
-        botones.addWidget(cancelar)
-        botones.addWidget(aceptar)
-        caja.addLayout(botones)
 
-    def hojas(self):
-        for i in range(self.arbol.topLevelItemCount()):
-            disp = self.arbol.topLevelItem(i)
-            for j in range(disp.childCount()):
-                seccion = disp.child(j)
-                for k in range(seccion.childCount()):
-                    yield seccion.child(k)
 
-    def seleccion(self):
-        return [h.ident for h in self.hojas() if h.checkState(0) == Qt.Checked][:MAX_SENSORES]
 
-    def filtrar(self, texto):
-        texto = texto.lower().strip()
-        for h in self.hojas():
-            h.setHidden(bool(texto) and texto not in h.busqueda)
-        for i in range(self.arbol.topLevelItemCount()):
-            disp = self.arbol.topLevelItem(i)
-            for j in range(disp.childCount()):
-                seccion = disp.child(j)
-                visibles = any(not seccion.child(k).isHidden() for k in range(seccion.childCount()))
-                seccion.setHidden(not visibles)
-                seccion.setExpanded(bool(texto) or seccion.isExpanded())
-            disp.setHidden(all(disp.child(j).isHidden() for j in range(disp.childCount())))
-            disp.setExpanded(bool(texto) or disp.isExpanded())
 
-    def ninguno(self):
-        for h in self.hojas():
-            h.setCheckState(0, Qt.Unchecked)
 
-    def restablecer(self):
-        self.por_defecto = True
-        self.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -1626,7 +1271,7 @@ class Tarjeta(QWidget):
         el texto de abajo. Las gráficas encogen antes de quitar nada."""
         # La primera gráfica crece si la tarjeta es más alta que su contenido
         # (filas de la misma altura en modo widgets, cuadrícula en modo panel).
-        estirar = isinstance(w, (Grafica, Velocimetro, VistaJuego, VistaApps)) and not self._estira
+        estirar = (isinstance(w, Grafica) or getattr(w, "ESTIRA", False)) and not self._estira
         self._estira = self._estira or estirar
         self.caja.addWidget(w, 1 if estirar else 0)
         if prescindible:
@@ -2627,253 +2272,12 @@ class PronosticoDias(QWidget):
             p.drawRoundedRect(QRectF(x1, by, max(x2 - x1, 4), 4), 2, 2)
 
 
-class VistaApps(QWidget):
-    """Lanzador: los iconos de las apps que elige el usuario; un clic las abre. Con el clic
-    derecho sobre un icono, el menú de la tarjeta trae quitarlo o moverlo."""
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.encima = None        # icono bajo el ratón
-        self.menu_indice = None   # icono sobre el que se abrió el menú
-        self._iconos = {}         # (id, color, escala) -> QPixmap
-        self._alto = None
-        self.setMouseTracking(True)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # los iconos se centran en la celda
-        self.setMinimumHeight(lanzador.TAM)
-
-    def apps(self):
-        return self.app.config.setdefault("apps", [])
-
-    def cambiado(self):
-        self.app.guardar_config()
-        self._ajustar()
-        self.update()
-
-    def _ajustar(self):
-        _pos, alto = lanzador.rejilla(len(self.apps()), self.width())
-        alto = max(lanzador.TAM, alto)
-        if alto != self._alto:
-            self._alto = alto
-            self.setMinimumHeight(alto)
-            self.updateGeometry()
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._ajustar()
-
-    def _indice(self, pos):
-        rejilla, _alto = lanzador.rejilla(len(self.apps()), self.width(), self.height())
-        return next((i for i, (ix, iy) in enumerate(rejilla)
-                     if ix <= pos.x() < ix + lanzador.TAM and iy <= pos.y() < iy + lanzador.TAM), None)
-
-    def _poner_encima(self, i):
-        if i != self.encima:
-            self.encima = i
-            self.setCursor(Qt.PointingHandCursor if i is not None else Qt.ArrowCursor)
-            self.update()
-
-    def mouseMoveEvent(self, e):
-        self._poner_encima(self._indice(e.position()))
-        e.ignore()
-
-    def leaveEvent(self, e):
-        self._poner_encima(None)
-
-    def _tarjeta(self):
-        w = self.parentWidget()
-        while w and not isinstance(w, Tarjeta):
-            w = w.parentWidget()
-        return w
-
-    def mousePressEvent(self, e):
-        tarjeta = self._tarjeta()
-        i = self._indice(e.position())
-        if tarjeta and tarjeta.en_edicion():
-            e.ignore()
-        elif e.button() == Qt.RightButton:
-            self.menu_indice = i
-            e.ignore()  # el menú de la tarjeta
-        elif e.button() == Qt.LeftButton and i is not None:
-            self.abrir(self.apps()[i])
-        else:
-            e.ignore()
-
-    def abrir(self, a):
-        try:
-            os.startfile(a["id"])
-        except OSError as e:
-            print("No se pudo abrir", a["id"], e, file=sys.stderr)
-
-    def _icono(self, a, color):
-        escala = self.devicePixelRatioF()
-        clave = (a["id"], color, escala)
-        if clave not in self._iconos:
-            lado = round(lanzador.TAM * escala)
-            pm = QFileIconProvider().icon(QFileInfo(a["id"])).pixmap(lado, lado)
-            if not pm.isNull() and (pm.width() != lado or pm.height() != lado):
-                pm = pm.scaled(lado, lado, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            if not pm.isNull() and color:
-                img = pm.toImage().convertToFormat(QImage.Format_RGBA8888)
-                w, h, fila = img.width(), img.height(), img.bytesPerLine()
-                crudo = bytes(img.constBits())
-                rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
-                datos = lanzador.tenir_icono(rgba, color)
-                pm = QPixmap.fromImage(QImage(datos, w, h, w * 4, QImage.Format_RGBA8888).copy())
-            pm.setDevicePixelRatio(escala)
-            self._iconos[clave] = None if pm.isNull() else pm
-        return self._iconos[clave]
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        apps = self.apps()
-        if not apps:
-            p.setPen(QColor(C_SEC))
-            f = QFont(self.font())
-            f.setPixelSize(round(12 * ESCALA))
-            p.setFont(f)
-            p.drawText(self.rect(), Qt.AlignCenter, _("Clic derecho > Añadir aplicación…"))
-            return
-        modo = self.app.config.get("apps_color", "original")
-        color = {"acento": rgb(acento()), "texto": rgb(QColor(C_TEXTO))}.get(modo)
-        rejilla, _alto = lanzador.rejilla(len(apps), self.width(), self.height())
-        t = lanzador.TAM
-        for i, (a, (x, y)) in enumerate(zip(apps, rejilla)):
-            if i == self.encima:
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor(*TENUE, 36))
-                p.drawRoundedRect(QRectF(x - 3, y - 3, t + 6, t + 6), 9, 9)
-            pm = self._icono(a, color)
-            if pm:
-                p.drawPixmap(QPointF(x, y), pm)
 
 
-class FilaDocker(QWidget):
-    """Un contenedor: punto de color, nombre y, a la derecha, tiempo, CPU y RAM."""
-
-    def __init__(self, app, nombre):
-        super().__init__()
-        self.app, self.nombre = app, nombre
-        self.color = "verde"
-        fila = QHBoxLayout(self)
-        fila.setContentsMargins(16, 0, 0, 0)  # sitio para el punto
-        fila.setSpacing(8)
-        self.lb_nombre = etiqueta("", "sub")
-        recortar(self.lb_nombre, nombre, ANCHO - 160)
-        fila.addWidget(self.lb_nombre, 1)
-        self.lb_datos = etiqueta("", "dim")
-        fila.addWidget(self.lb_datos)
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(Qt.NoPen)
-        p.setBrush(COLORES[self.color])
-        p.drawEllipse(QPointF(5, self.height() / 2), 4, 4)
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.RightButton:
-            self.app.docker_sel = self.nombre  # el menú de la tarjeta trae parar, iniciar…
-        e.ignore()
-
-    def actualizar(self, c):
-        color = contenedores.color(c)
-        if color != self.color:
-            self.color = color
-            self.update()
-        partes = [contenedores.hace(c["desde"])] + ([c["cpu"], c["ram"]] if c["estado"] == "running" else [])
-        self.lb_datos.setText(" · ".join(x for x in partes if x))
 
 
-class DialogoImmich(QDialog):
-    """La dirección de Immich y una clave de API."""
-
-    def __init__(self, url, clave, padre=None):
-        super().__init__(padre)
-        self.setWindowTitle(_("Conectar con Immich"))
-        self.setStyleSheet(SelectorSensores.ESTILO)
-        self.resize(480, 0)
-        caja = QVBoxLayout(self)
-        ayuda = QLabel(_("En Immich: tu foto (arriba a la derecha) > <b>Ajustes de la cuenta</b> > <b>Claves de API</b> "
-                         "> <b>Nueva clave de API</b>. Copia la clave y pégala aquí."))
-        ayuda.setWordWrap(True)
-        caja.addWidget(ayuda)
-        for etiq, attr, valor, oculto in (("Dirección", "url", url, False), ("Clave de API", "clave", clave, True)):
-            caja.addWidget(QLabel(_(etiq)))
-            e = QLineEdit(valor)
-            if oculto:
-                e.setEchoMode(QLineEdit.Password)
-            setattr(self, attr, e)
-            caja.addWidget(e)
-        botones = QHBoxLayout()
-        botones.addStretch(1)
-        for texto, fn, principal in ((_("Cancelar"), self.reject, False), (_("Conectar"), self.accept, True)):
-            b = QPushButton(texto)
-            b.clicked.connect(fn)
-            if principal:
-                b.setProperty("estilo", "principal")
-                b.setDefault(True)
-            botones.addWidget(b)
-        caja.addLayout(botones)
 
 
-class SelectorApps(QDialog):
-    """Elegir apps del menú Inicio (o cualquier .exe) para el lanzador."""
-
-    def __init__(self, ya, padre=None):
-        super().__init__(padre)
-        self.setWindowTitle(_("Añadir aplicación"))
-        self.setStyleSheet(SelectorSensores.ESTILO + "QListWidget { background: #20232b; color: #e6e9ef; "
-                           "border: 1px solid #3a3f4b; border-radius: 6px; } QListWidget::item { padding: 4px; }")
-        self.resize(440, 540)
-        self.extra = []
-        caja = QVBoxLayout(self)
-        self.buscar = QLineEdit()
-        self.buscar.setPlaceholderText(_("Buscar…"))
-        self.buscar.textChanged.connect(self.filtrar)
-        caja.addWidget(self.buscar)
-        self.lista = QListWidget()
-        self.lista.setSelectionMode(QListWidget.ExtendedSelection)
-        self.lista.setIconSize(QSize(24, 24))
-        self.lista.itemDoubleClicked.connect(lambda _i: self.accept())
-        iconos = QFileIconProvider()
-        for a in lanzador.apps_windows():
-            if a["id"] in ya:
-                continue
-            item = QListWidgetItem(iconos.icon(QFileInfo(a["id"])), a["nombre"])
-            item.setData(Qt.UserRole, a)
-            self.lista.addItem(item)
-        caja.addWidget(self.lista, 1)
-        botones = QHBoxLayout()
-        exe = QPushButton(_("Elegir un programa (.exe)…"))
-        exe.clicked.connect(self.elegir_exe)
-        botones.addWidget(exe)
-        botones.addStretch(1)
-        for texto, fn, principal in ((_("Cancelar"), self.reject, False), (_("Añadir"), self.accept, True)):
-            b = QPushButton(texto)
-            b.clicked.connect(fn)
-            if principal:
-                b.setProperty("estilo", "principal")
-                b.setDefault(True)
-            botones.addWidget(b)
-        caja.addLayout(botones)
-
-    def filtrar(self, texto):
-        for i in range(self.lista.count()):
-            item = self.lista.item(i)
-            item.setHidden(texto.lower() not in item.text().lower())
-
-    def elegir_exe(self):
-        ruta, _x = QFileDialog.getOpenFileName(self, _("Elegir un programa (.exe)…"), os.environ.get("ProgramFiles", ""),
-                                               _("Programas (*.exe)"))
-        if ruta:
-            ruta = os.path.normpath(ruta)
-            self.extra.append({"id": ruta, "nombre": os.path.splitext(os.path.basename(ruta))[0]})
-            self.accept()
-
-    def elegidas(self):
-        return [i.data(Qt.UserRole) for i in self.lista.selectedItems()] + self.extra
 
 
 class DialogoCiudad(QDialog):
@@ -2882,7 +2286,7 @@ class DialogoCiudad(QDialog):
     def __init__(self, padre=None):
         super().__init__(padre)
         self.setWindowTitle(_("Ciudad del tiempo"))
-        self.setStyleSheet(SelectorSensores.ESTILO + "QListWidget { background: #20232b; color: #e6e9ef; "
+        self.setStyleSheet(ESTILO_DIALOGO + "QListWidget { background: #20232b; color: #e6e9ef; "
                            "border: 1px solid #3a3f4b; border-radius: 6px; } QListWidget::item { padding: 6px; }")
         self.resize(440, 380)
         self.elegida = None
@@ -2931,219 +2335,14 @@ class DialogoCiudad(QDialog):
 # Discord: canal de voz
 # ---------------------------------------------------------------------------
 
-def pixmap_redondo(datos, tam, dpr):
-    img = QPixmap()
-    final = QPixmap(int(tam * dpr), int(tam * dpr))
-    final.setDevicePixelRatio(dpr)
-    final.fill(Qt.transparent)
-    if not datos or not img.loadFromData(datos):
-        return None
-    p = QPainter(final)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setRenderHint(QPainter.SmoothPixmapTransform)
-    ruta = QPainterPath()
-    ruta.addEllipse(QRectF(0, 0, tam, tam))
-    p.setClipPath(ruta)
-    img = img.scaled(int(tam * dpr), int(tam * dpr), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-    img.setDevicePixelRatio(dpr)
-    p.drawPixmap(QPointF(0, 0), img)
-    p.end()
-    return final
 
 
-class Avatar(QWidget):
-    """Avatar redondo; con un aro verde mientras la persona habla."""
-
-    TAM = 26
-
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(self.TAM + 4, self.TAM + 4)
-        self.url = None
-        self.pix = None
-        self.hablando = False
-        self.inicial = "?"
-
-    def poner(self, url, datos, inicial):
-        self.inicial = (inicial or "?")[:1].upper()
-        if url != self.url or (datos and not self.pix):
-            self.url = url
-            self.pix = pixmap_redondo(datos, self.TAM, self.devicePixelRatioF())
-            self.update()
-
-    def set_hablando(self, si):
-        if si != self.hablando:
-            self.hablando = si
-            self.update()
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        c = QPointF(self.TAM / 2 + 2, self.TAM / 2 + 2)
-        if self.pix:
-            p.drawPixmap(QPointF(2, 2), self.pix)
-        else:
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor("#5865f2"))  # azul de Discord
-            p.drawEllipse(c, self.TAM / 2, self.TAM / 2)
-            f = QFont(self.font())
-            f.setPixelSize(12)
-            f.setBold(True)
-            p.setFont(f)
-            p.setPen(QColor("white"))
-            p.drawText(QRectF(2, 2, self.TAM, self.TAM), Qt.AlignCenter, self.inicial)
-        if self.hablando:
-            p.setPen(QPen(COLORES["verde"], 2.5))
-            p.setBrush(Qt.NoBrush)
-            p.drawEllipse(c, self.TAM / 2 + 0.8, self.TAM / 2 + 0.8)
 
 
-class FilaDiscord(QWidget):
-    """Una persona del canal: avatar, nombre, micro/cascos y su volumen (solo para mí)."""
-
-    def __init__(self, discord, uid, soy_yo):
-        super().__init__()
-        self.discord = discord
-        self.uid = uid
-        self._mute = False
-        self._pendiente = None
-        self._actualizando = False
-        self._enviar = QTimer(self, singleShot=True, interval=150)  # Discord limita las peticiones
-        self._enviar.timeout.connect(lambda: self.discord.volumen_usuario(self.uid, self._pendiente))
-        caja = QVBoxLayout(self)
-        caja.setContentsMargins(0, 0, 0, 0)
-        caja.setSpacing(2)
-        arriba = QHBoxLayout()
-        arriba.setSpacing(8)
-        self.avatar = Avatar()
-        arriba.addWidget(self.avatar)
-        self.nombre = etiqueta("", "sub")
-        arriba.addWidget(self.nombre, 1)
-        self.estado = etiqueta("", "sub")
-        arriba.addWidget(self.estado)
-        self.b_vol = None
-        if not soy_yo:
-            self.b_vol = boton_icono("volumen", 10)
-            self.b_vol.setToolTip(_("Volumen de esta persona (solo para ti)"))
-            self.b_vol.clicked.connect(lambda: self.abajo.setVisible(not self.abajo.isVisible()))
-            arriba.addWidget(self.b_vol)
-        caja.addLayout(arriba)
-        if not soy_yo:
-            self.abajo = QWidget()
-            fila = QHBoxLayout(self.abajo)
-            fila.setContentsMargins(34, 0, 0, 0)
-            fila.setSpacing(6)
-            self.slider = QSlider(Qt.Horizontal)
-            self.slider.setRange(0, 200)
-            self.slider.setCursor(Qt.PointingHandCursor)
-            self.slider.valueChanged.connect(self._cambio)
-            fila.addWidget(self.slider, 1)
-            self.valor = etiqueta("", "dim")
-            self.valor.setFixedWidth(40)
-            self.valor.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            fila.addWidget(self.valor)
-            self.b_mute = QPushButton(_("Silenciar"))
-            self.b_mute.setCheckable(True)
-            self.b_mute.setCursor(Qt.PointingHandCursor)
-            self.b_mute.setToolTip(_("Silenciar a esta persona solo para ti"))
-            self.b_mute.clicked.connect(lambda: self.discord.silenciar_usuario(self.uid, not self._mute))
-            fila.addWidget(self.b_mute)
-            self.abajo.hide()
-            caja.addWidget(self.abajo)
-
-    def _cambio(self, v):
-        self.valor.setText(f"{v} %")
-        if not self._actualizando:
-            self._pendiente = v
-            self._enviar.start()
-
-    def actualizar(self, m, hablando, avatar):
-        recortar(self.nombre, m["nombre"] + (_(" · bot") if m["bot"] else ""), ANCHO - 140)
-        self.nombre.setStyleSheet(f"color: {COLORES['verde'].name()};" if hablando else "")
-        self.avatar.poner(m["avatar"], avatar, m["nombre"])
-        self.avatar.set_hablando(hablando)
-        rojo = COLORES["rojo"].name()
-        self.estado.setText(f'<span style="color:{rojo}">🎧 ✕</span>' if m["ensordecido"] else
-                            f'<span style="color:{rojo}">🎙 ✕</span>' if m["micro_off"] else "")
-        if self.b_vol:
-            self._mute = m["silenciado_local"]
-            self.b_mute.setChecked(self._mute)
-            self.b_mute.setText(_("Activar") if self._mute else _("Silenciar"))
-            poner_icono(self.b_vol, "silencio" if self._mute else "volumen", 10)
-            if not self._enviar.isActive() and not self.slider.isSliderDown():
-                self._actualizando = True
-                self.slider.setValue(round(m["volumen"]))
-                self._actualizando = False
-                self.valor.setText(f"{round(m['volumen'])} %")
 
 
-def guia_discord():
-    """La guía paso a paso de Discord en GitHub (en español o en inglés)."""
-    nombre = "DISCORD.md" if idioma.actual() == "es" else "DISCORD.en.md"
-    return f"https://github.com/{REPO}/blob/main/docs/{nombre}"
 
 
-class DialogoDiscord(QDialog):
-    """Conectar con Discord paso a paso: pide el Client ID y el Client Secret."""
-
-    def __init__(self, client_id, padre=None):
-        super().__init__(padre)
-        self.setWindowTitle(_("Conectar con Discord"))
-        self.setStyleSheet(SelectorSensores.ESTILO)
-        self.resize(580, 420)
-        caja = QVBoxLayout(self)
-
-        def texto(html, sub=False):
-            lb = QLabel(html)
-            lb.setWordWrap(True)
-            if sub:
-                lb.setStyleSheet("color: #8b94a4;")
-            caja.addWidget(lb)
-
-        texto(_("Discord solo deja controlar la voz a aplicaciones registradas. Crea la tuya "
-                "(gratis, una sola vez, unos 3 minutos):"))
-        if CLIENT_SECRET_POR_DEFECTO:
-            texto(_("<b>¿Te han invitado como tester de la aplicación de MoonDeck?</b> Acepta la invitación, "
-                    "deja el Client Secret vacío y pulsa Conectar."))
-        pasos = (
-            _("Abre <b>discord.com/developers</b> y pulsa <b>New Application</b> (el nombre da igual)."),
-            _("En <b>OAuth2</b>, copia el <b>Client ID</b>; pulsa <b>Reset Secret</b> y copia el <b>Client Secret</b>."),
-            _("En la misma página, en <b>Redirects</b>: <b>Add Redirect</b>, escribe <tt>http://localhost</tt> "
-              "y pulsa <b>Save Changes</b>."),
-            _("Pega aquí los dos datos y pulsa <b>Conectar</b>. Con Discord abierto, acepta <b>Autorizar</b>."),
-        )
-        for n, paso in enumerate(pasos, 1):
-            texto(f"<b>{n}.</b>&nbsp; {paso}")
-        enlaces = QHBoxLayout()
-        for etiq, url in ((_("Abrir discord.com/developers"), "https://discord.com/developers/applications"),
-                          (_("Ver la guía paso a paso"), guia_discord())):
-            b = QPushButton(etiq)
-            b.clicked.connect(lambda _x=False, u=url: QDesktopServices.openUrl(QUrl(u)))
-            enlaces.addWidget(b)
-        enlaces.addStretch()
-        caja.addLayout(enlaces)
-        rejilla = QGridLayout()
-        self.id = QLineEdit(client_id)
-        self.id.setPlaceholderText(_("Un número largo, de OAuth2 > Client ID"))
-        self.secreto = QLineEdit()
-        self.secreto.setEchoMode(QLineEdit.Password)
-        self.secreto.setPlaceholderText(_("Vacío = el de la aplicación de MoonDeck") if CLIENT_SECRET_POR_DEFECTO
-                                        else _("De OAuth2 > Reset Secret"))
-        for fila, (nombre, campo) in enumerate((("Client ID", self.id), ("Client Secret", self.secreto))):
-            rejilla.addWidget(QLabel(nombre), fila, 0)
-            rejilla.addWidget(campo, fila, 1)
-        caja.addLayout(rejilla)
-        texto(_("Se guardan solo en tu equipo."), sub=True)
-        botones = QHBoxLayout()
-        botones.addStretch()
-        cancelar = QPushButton(_("Cancelar"))
-        cancelar.clicked.connect(self.reject)
-        ok = QPushButton(_("Conectar"))
-        ok.setObjectName("aceptar")
-        ok.clicked.connect(self.accept)
-        botones.addWidget(cancelar)
-        botones.addWidget(ok)
-        caja.addLayout(botones)
 
 
 # ---------------------------------------------------------------------------
@@ -3219,8 +2418,8 @@ class VentanaConfig(QWidget):
 
     PAGINAS = (("tema", "Tema"), ("ajustes", "Widgets"), ("widgets", "Tarjetas · modo widgets"),
                ("panel", "Tarjetas · modo panel"), ("fondo", "Fondo del panel"), ("disposicion", "Disposición"),
-               ("general", "General"))
-    ESTILO = SelectorSensores.ESTILO + """
+               ("packs", "Packs"), ("general", "General"))
+    ESTILO = ESTILO_DIALOGO + """
     QWidget#raiz { background: #1b1e25; }
     QListWidget { background: #16181e; color: #d0d6e0; border: none; font-size: 10pt; outline: none; }
     QListWidget::item { padding: 10px 14px; }
@@ -3485,42 +2684,7 @@ class VentanaConfig(QWidget):
             ch.toggled.connect(lambda v, c=clave: app.cambiar_reloj(**{c: v}))
             self.fila(lista, texto, ch)
 
-        lista = self.grupo(caja, "Test de velocidad")
-        estilo = QComboBox()
-        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-            estilo.addItem(_(nombre), clave)
-        estilo.setCurrentIndex(max(0, estilo.findData(app.vel_reloj.estilo)))
-        estilo.currentIndexChanged.connect(lambda i: app.cambiar_velocimetro(estilo.itemData(i)))
-        self.fila(lista, "Estilo del velocímetro", estilo)
-
-        lista = self.grupo(caja, "Discord")
-        o = app.config["discord"]
-        al_abrir = QComboBox()
-        for clave, nombre in (("nada", "Solo mostrar los canales"), ("ultimo", "Entrar en el último canal"),
-                              ("gente", "Entrar donde haya más gente")):
-            al_abrir.addItem(_(nombre), clave)
-        al_abrir.setCurrentIndex(max(0, al_abrir.findData(o["al_abrir"])))
-        al_abrir.currentIndexChanged.connect(lambda i: app.cambiar_discord(al_abrir=al_abrir.itemData(i)))
-        self.fila(lista, "Al abrir Discord desde el widget", al_abrir)
-        servidores = app.discord.instantanea()["servidores"]
-        lista = self.grupo(caja, "Tu servidor de Discord",
-                           "Sus canales de voz salen en el widget cuando no estás en ninguno; pulsa uno para entrar.")
-        if not servidores:
-            self.fila(lista, "Abre Discord para ver tus servidores", QLabel())
-        for g in servidores:
-            ch = QCheckBox()
-            ch.setChecked(g["id"] in o["servidores"])
-            ch.toggled.connect(lambda v, i=g["id"]: app.cambiar_discord(
-                servidores=[e for e in o["servidores"] if e != i] + ([i] if v else [])))
-            self.fila(lista, g["nombre"], ch)
-
-        lista = self.grupo(caja, "Aplicaciones", "Añade apps con el clic derecho en el widget de aplicaciones.")
-        color = QComboBox()
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            color.addItem(_(nombre), clave)
-        color.setCurrentIndex(max(0, color.findData(app.config.get("apps_color", "original"))))
-        color.currentIndexChanged.connect(lambda i: app.color_apps(color.itemData(i)))
-        self.fila(lista, "Color de los iconos", color, "Los del tema se adaptan al cambiar de tema")
+        packs.llamar(app.packs, "ajustes", self, caja)
 
         lista = self.grupo(caja, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
@@ -3614,6 +2778,56 @@ class VentanaConfig(QWidget):
             t.clave: [t.ventana.x(), t.ventana.y()] for t in self.app.tarjetas if t.ventana}
         self.app.guardar_config()
         self.construir()
+
+    def pagina_packs(self, caja):
+        """Los packs de widgets: borrar los que no se usan y volver a descargarlos de GitHub."""
+        app = self.app
+        g = app.gestor_packs
+        lista = self.grupo(caja, "Packs de widgets", "Borra los que no uses; puedes volver a descargarlos de "
+                                                     "GitHub cuando quieras. Se aplica al reiniciar MoonDeck.")
+        for ident, nombre, texto, widgets, _x in packs.CATALOGO:
+            if not packs.borrable(ident):
+                control = QLabel(_("Incluido"))
+                control.setObjectName("sub")
+            elif g.ocupado_con == ident:
+                control = QPushButton(_("Descargando…"))
+                control.setEnabled(False)
+            elif g.instalado(ident):
+                control = QPushButton(_("Borrar"))
+                control.setEnabled(not g.ocupado and not g.desde_codigo)
+                if g.desde_codigo:
+                    control.setToolTip(_("Ejecutando desde el código: aquí no se borra nada."))
+                control.clicked.connect(lambda _x=False, i=ident: (g.borrar(i), self.construir()))
+            else:
+                control = QPushButton(_("Descargar"))
+                control.setObjectName("aceptar")
+                control.setEnabled(not g.ocupado)
+                control.clicked.connect(lambda _x=False, i=ident: self.descargar_pack(i))
+            self.fila(lista, nombre, control, _(texto) + "\n" + " · ".join(_(w) for w in widgets))
+        aviso = (_("No se pudo descargar: {error}").format(error=g.error) if g.estado == "error" else
+                 _("Reinicia MoonDeck para ver los cambios.") if g.cambiado else "")
+        if aviso:
+            fila = QHBoxLayout()
+            lb = QLabel(aviso)
+            lb.setWordWrap(True)
+            fila.addWidget(lb, 1)
+            if g.cambiado and g.estado != "error":
+                reiniciar = QPushButton(_("Reiniciar ahora"))
+                reiniciar.setObjectName("aceptar")
+                reiniciar.clicked.connect(lambda: app.actualizador.reiniciar(app.salir))
+                fila.addWidget(reiniciar)
+            caja.addLayout(fila)
+
+    def descargar_pack(self, ident):
+        self.app.gestor_packs.descargar(ident)
+        self.construir()
+
+        def mirar():
+            if self.app.gestor_packs.ocupado:
+                QTimer.singleShot(300, mirar)
+            elif self.isVisible():
+                self.construir()
+        QTimer.singleShot(300, mirar)
 
     def pagina_general(self, caja):
         app = self.app
@@ -3752,7 +2966,11 @@ class VentanaConfig(QWidget):
 
 
 
-class Monitor:
+# Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
+PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
+
+
+class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def __init__(self, qapp):
         self.qapp = qapp
         self.colocado = False
@@ -3786,24 +3004,17 @@ class Monitor:
         self.panel = None
         self.tarjetas = []
         self.aplicar_tema(guardar=False)
-        self.discord = Discord(CARPETA)
         self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
-        self.immich = Immich(CARPETA)
-        self.docker = contenedores.Docker()
-        self.docker_sel = None  # contenedor sobre el que se abrió el menú
-        self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
-        self.discord_no_instalado = False
-        self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
-        self.vigilar_discord()
         self.actualizador = Actualizador(os.path.dirname(os.path.abspath(__file__)))
         self.tiempo = Tiempo(self.config.get("tiempo_ciudad") or CIUDAD_POR_DEFECTO)
+        self.actualizador.omitir = packs.omitidos(self.config.get("packs_borrados", []))
+        self.gestor_packs = packs.Gestor(self.actualizador.carpeta, self.config, self.guardar_config)
+        self.packs = PACKS
+        packs.llamar(self.packs, "iniciar", self)
         self.manual = False  # True cuando el usuario arrastra un widget
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
         self.dispositivos = Dispositivos()
-        self.test = TestVelocidad()
-        self.test.resultado = self.config.get("velocidad")
-        self.t_velocidad = QTimer(interval=250)  # solo corre mientras se mide
         log("Mezclador:", "OK" if self.mezclador.ok else self.mezclador.error,
             "| dispositivos:", "OK" if self.dispositivos.ok else self.dispositivos.error)
 
@@ -3825,6 +3036,7 @@ class Monitor:
         self.actualizar_multimedia()
         self.actualizar_reloj()
         self.actualizar_audio()
+        packs.llamar(self.packs, "arrancar", self)
         for t in self.tarjetas:
             t.set_opacidad(self.config["opacidad"].get(t.clave, 1.0))
         self.poner_titulos()
@@ -3848,10 +3060,6 @@ class Monitor:
             self.t_audio = QTimer(interval=2000)
             self.t_audio.timeout.connect(self.actualizar_audio)
             self.t_audio.start()
-        self.t_velocidad.timeout.connect(self.actualizar_velocidad)
-        self.t_discord = QTimer(interval=150)  # rápido: quién habla
-        self.t_discord.timeout.connect(self.actualizar_discord)
-        self.t_discord.start()
         self.t_tiempo = QTimer(interval=1000)
         self.t_tiempo.timeout.connect(self.actualizar_tiempo)
         self.t_tiempo.start()
@@ -3903,16 +3111,6 @@ class Monitor:
             c.add(leyenda(("Uso %", "verde"), ("VRAM %", "azul")), prescindible=1)
             self.gpus[g["id"]] = w
 
-        # FPS (solo Windows: usa PresentMon)
-        self.fps = None
-        if ES_WINDOWS:
-            c = self.tarjeta("fps", "FPS")
-            self.fps = {"big": c.add(etiqueta("", "grande")), "app": c.add(etiqueta()),
-                        "sub": c.add(etiqueta("", "dim")),
-                        "graf": c.add(Grafica(["verde", "naranja"], maximo=None), prescindible=9)}
-            c.add(leyenda(("FPS", "verde"), ("1% low", "naranja")), prescindible=1)
-            self.fps["sub"].setWordWrap(True)
-
         # Red
         c = self.tarjeta("red", "Red")
         self.red_big = c.add(etiqueta("", "grande"))
@@ -3932,16 +3130,6 @@ class Monitor:
             # Si no caben, se van quitando las últimas particiones.
             n = len(partes) - i
             self.particiones[mount] = (c.add(etiqueta(), prescindible=n), c.add(Barra(), prescindible=n))
-
-        # Sensores: los elegidos en "Elegir sensores…" (o una selección automática).
-        c = self.tarjeta("temperaturas", "Sensores")
-        if s["lhm_error"] and ES_WINDOWS:
-            aviso = c.add(etiqueta(s["lhm_error"] + _(". Abre la app con iniciar.bat (como administrador)."), "dim"))
-            aviso.setWordWrap(True)
-        self.sens_lista = ListaSensores()
-        c.add(self.sens_lista)
-        c._estira = True  # la lista absorbe el alto sobrante
-        self.construir_sensores(s)
 
         # Multimedia (solo Windows): lo que suena y volumen por app
         self.multimedia = None
@@ -4066,148 +3254,8 @@ class Monitor:
             a["aviso"].setWordWrap(True)
             self.audio = a
 
-        # Discord: el canal de voz en el que estoy
-        c = self.tarjeta("discord", "Discord")
-        d = {"version": None, "filas": {}, "ids": None}
-        d["canal"] = c.add(etiqueta("", "sub"))
-        d["canal"].setStyleSheet("font-weight: 600;")
-        d["servidor"] = c.add(etiqueta("", "dim"))
-        d["aviso"] = c.add(etiqueta("", "dim"))
-        d["aviso"].setWordWrap(True)
-        d["conectar"] = c.add(QPushButton(_("Conectar con Discord…")))
-        d["conectar"].setProperty("estilo", "principal")
-        d["conectar"].setCursor(Qt.PointingHandCursor)
-        d["conectar"].clicked.connect(lambda: self.conectar_discord(c.window()))
-        d["abrir"] = c.add(QPushButton(_("Abrir Discord")))
-        d["abrir"].setProperty("estilo", "principal")
-        d["abrir"].setCursor(Qt.PointingHandCursor)
-        d["abrir"].clicked.connect(self.abrir_discord)
-        d["canales"] = QWidget()
-        d["caja_canales"] = QVBoxLayout(d["canales"])
-        d["caja_canales"].setContentsMargins(0, 0, 0, 0)
-        d["caja_canales"].setSpacing(4)
-        d["canales_ids"] = None
-        c.add(d["canales"])
-        d["ultimo"] = c.add(QPushButton())
-        d["ultimo"].setCursor(Qt.PointingHandCursor)
-        d["ultimo"].clicked.connect(self.entrar_ultimo_discord)
-        d["lista"] = QWidget()
-        d["caja_lista"] = QVBoxLayout(d["lista"])
-        d["caja_lista"].setContentsMargins(0, 4, 0, 0)
-        d["caja_lista"].setSpacing(4)
-        c.add(d["lista"])
-        d["controles"] = QWidget()
-        cc = QVBoxLayout(d["controles"])
-        cc.setContentsMargins(0, 6, 0, 0)
-        cc.setSpacing(4)
-        for clave, texto, maximo, fn in (("entrada", "Micro", 100, self.discord.volumen_entrada),
-                                         ("salida", "Salida", 200, self.discord.volumen_salida)):
-            fila = QHBoxLayout()
-            lb = etiqueta(texto, "sub")
-            lb.setFixedWidth(50)
-            fila.addWidget(lb)
-            sl = QSlider(Qt.Horizontal)
-            sl.setRange(0, maximo)
-            sl.setCursor(Qt.PointingHandCursor)
-            val = etiqueta("", "dim")
-            val.setFixedWidth(40)
-            val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            envio = QTimer(sl, singleShot=True, interval=150)
-            envio.timeout.connect(lambda sl=sl, fn=fn: fn(sl.value()))
-            sl.valueChanged.connect(lambda v, sl=sl, val=val, envio=envio: (
-                val.setText(f"{v} %"), None if getattr(sl, "_actualizando", False) else
-                (setattr(sl, "_tocado", time.monotonic()), envio.start())))
-            fila.addWidget(sl, 1)
-            fila.addWidget(val)
-            d[clave] = (sl, val, envio)
-            cc.addLayout(fila)
-        botones = QHBoxLayout()
-        botones.setSpacing(6)
-        d["mute"], d["deaf"], d["salir"] = QPushButton(_("Silenciar")), QPushButton(_("Ensordecer")), QPushButton(_("Salir"))
-        for b in (d["mute"], d["deaf"]):
-            b.setCheckable(True)
-        d["mute"].clicked.connect(lambda: self.discord.silenciar(not self.discord.ajustes.get("mute")))
-        d["deaf"].clicked.connect(lambda: self.discord.ensordecer(not self.discord.ajustes.get("deaf")))
-        d["salir"].clicked.connect(self.discord.salir)
-        for b in (d["mute"], d["deaf"], d["salir"]):
-            b.setCursor(Qt.PointingHandCursor)
-            botones.addWidget(b)
-        cc.addLayout(botones)
-        c.add(d["controles"])
-        d["tarjeta"] = c
-        self.dc = d
-
-        # Test de velocidad
-        c = self.tarjeta("velocidad", "Test de velocidad")
-        self.vel_reloj = c.add(Velocimetro())
-        self.vel_reloj.estilo = self.config.get("velocimetro", "deportivo")
-        self.vel_resto = c.add(etiqueta(), prescindible=2)
-        self.vel_resto.setAlignment(Qt.AlignHCenter)
-        self.vel_estado = c.add(etiqueta("", "dim"), prescindible=1)
-        self.vel_estado.setWordWrap(True)
-        self.vel_estado.setAlignment(Qt.AlignHCenter)
-        self.vel_boton = QPushButton(_("Iniciar test"))
-        self.vel_boton.setProperty("estilo", "principal")
-        self.vel_boton.setCursor(Qt.PointingHandCursor)
-        self.vel_boton.clicked.connect(self.iniciar_test)
-        c.add(self.vel_boton)
-
-        # Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (se elige con el clic derecho).
-        c = self.tarjeta("juegos", "Juegos")
-        self.juego_vista = VistaJuego(self)
-        c.add(self.juego_vista)
-        c._estira = True
-
-        # Aplicaciones: un lanzador con los iconos que elija el usuario.
-        c = self.tarjeta("apps", "Aplicaciones")
-        self.apps_vista = VistaApps(self)
-        c.add(self.apps_vista)
-
-        # Immich: espacio, lo que ocupa la biblioteca y las tareas en cola.
-        c = self.tarjeta("immich", "Immich")
-        im = {"version": None, "usuarios": None}
-        im["disco"] = c.add(etiqueta("", "sub"))
-        im["barra"] = c.add(Barra())
-        im["fotos"] = c.add(etiqueta("", "sub"), prescindible=4)
-        im["videos"] = c.add(etiqueta("", "sub"), prescindible=4)
-        im["lista_usuarios"] = QWidget()
-        im["caja_usuarios"] = QVBoxLayout(im["lista_usuarios"])
-        im["caja_usuarios"].setContentsMargins(0, 0, 0, 0)
-        im["caja_usuarios"].setSpacing(2)
-        c.add(im["lista_usuarios"], prescindible=3)
-        im["tareas"] = c.add(etiqueta("", "dim"), prescindible=2)
-        im["tareas"].setWordWrap(True)
-        im["pie"] = c.add(etiqueta("", "dim"), prescindible=5)
-        im["ia"] = c.add(QPushButton())
-        im["ia"].setCursor(Qt.PointingHandCursor)
-        im["ia"].clicked.connect(self.alternar_ia)
-        im["aviso"] = c.add(etiqueta("", "dim"))
-        im["aviso"].setWordWrap(True)
-        im["conectar"] = c.add(QPushButton(_("Conectar con Immich…")))
-        im["conectar"].setProperty("estilo", "principal")
-        im["conectar"].setCursor(Qt.PointingHandCursor)
-        im["conectar"].clicked.connect(lambda: self.conectar_immich(c.window()))
-        self.im = im
-        self.t_extras = QTimer()  # Monitor no es un QObject: el temporizador va sin padre
-        self.t_extras.timeout.connect(self.actualizar_extras)
-        self.t_extras.start(1000)
-
-        # Docker: los contenedores, con su estado.
-        c = self.tarjeta("docker", "Docker")
-        dk = {"version": None, "filas": {}, "orden": None}
-        dk["aviso"] = c.add(etiqueta("", "dim"))
-        dk["aviso"].setWordWrap(True)
-        dk["lista"] = QWidget()
-        dk["caja"] = QVBoxLayout(dk["lista"])
-        dk["caja"].setContentsMargins(0, 0, 0, 0)
-        dk["caja"].setSpacing(6)
-        c.add(dk["lista"])
-        dk["todo"] = c.add(QPushButton())
-        dk["todo"].setCursor(Qt.PointingHandCursor)
-        dk["todo"].clicked.connect(self.alternar_docker)
-        dk["tarjeta"] = c
-        self.dk = dk
-        self.actualizar_velocidad()
+        # Lo de los packs (pack_*.py)
+        packs.llamar(self.packs, "construir", self, s)
 
         for t in self.tarjetas:
             t.terminar()
@@ -4230,53 +3278,6 @@ class Monitor:
         except OSError:
             pass
         return "CPU"
-
-    # --- sensores ------------------------------------------------------------
-
-    def construir_sensores(self, s):
-        """Decide qué sensores muestra el widget Sensores y en qué orden (por tipo)."""
-        elegidos = self.config.get("sensores")
-        if elegidos is None:
-            elegidos = seleccion_auto(s["sensores"])
-        tipos = {x[5]: x[2] for x in s["sensores"]}
-        orden = list(dict.fromkeys(v[0] for v in TIPOS_SENSOR.values()))
-        por_seccion = {}
-        for ident in elegidos:
-            if ident in tipos:
-                seccion = TIPOS_SENSOR.get(tipos[ident], (tipos[ident],))[0]
-                por_seccion.setdefault(seccion, []).append(ident)
-        self.sens_secciones = [(sec, por_seccion[sec]) for sec in
-                               sorted(por_seccion, key=lambda x: orden.index(x) if x in orden else 99)]
-        self.pintar_sensores(s)
-
-    def pintar_sensores(self, s):
-        valores = {x[5]: x for x in s["sensores"]}
-        lineas = []
-        for seccion, idents in self.sens_secciones:
-            if len(self.sens_secciones) > 1:
-                lineas.append(("seccion", _(seccion).upper()))
-            for ident in idents:
-                x = valores.get(ident)
-                if x:
-                    _x, hw, tipo, nombre, valor, _x = x
-                    color = color_temp(valor) if tipo == "Temperature" else C_CLARO
-                    lineas.append(("sensor", f"{hw} · {nombre}", fmt_sensor(tipo, valor, color=False), color))
-        if not lineas:
-            lineas = [("mas", _("Ningún sensor elegido: clic derecho > «Elegir sensores…»"))]
-        self.sens_lista.set_lineas(lineas)
-
-    def elegir_sensores(self, padre=None):
-        s = getattr(self, "ultimo", None)
-        if not s:
-            return
-        actual = self.config.get("sensores")
-        dialogo = SelectorSensores(s["sensores"], seleccion_auto(s["sensores"]) if actual is None else actual,
-                                   padre)
-        if dialogo.exec():
-            self.config["sensores"] = None if dialogo.por_defecto else dialogo.seleccion()
-            self.construir_sensores(s)
-            self.aplicar(s)
-            self.guardar_config()
 
     # --- widgets visibles -----------------------------------------------------
 
@@ -4377,9 +3378,7 @@ class Monitor:
             self.colocar(ignorar_guardadas=not self.manual, pantalla=self.pantalla_guardada())
             for t in visibles:
                 t.ventana.show()
-        self.discord.permitir(any(t.clave == "discord" for t in self.visibles()))
-        self.immich.permitir(any(t.clave == "immich" for t in self.visibles()))
-        self.docker.permitir(any(t.clave in ("docker", "immich") for t in self.visibles()))  # Immich: su IA
+        packs.llamar(self.packs, "visibles", self, {t.clave for t in self.visibles()})
 
     def ventana_para(self, tarjeta, encima, pos=None):
         if tarjeta.parent():
@@ -4491,7 +3490,7 @@ class Monitor:
             a = sub.addAction(t.nombre_menu, lambda _=False, t=t: self.alternar_widget(t))
             a.setCheckable(True)
             a.setChecked(t in self.visibles())
-        menu.addAction(_("Elegir sensores…"), lambda: self.elegir_sensores(padre))
+        packs.llamar(self.packs, "acciones", self, menu, padre)
         if self.modo == "widgets":
             # Los submenús de pantallas se rellenan al abrirse: puede conectarse o quitarse un monitor.
             sub = menu.addMenu(_("Recolocar widgets en..."))
@@ -4535,8 +3534,6 @@ class Monitor:
         sub.addSeparator()
         sub.addAction(_("Aplicar a todos los widgets"),
                       lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
-        if tarjeta.clave == "temperaturas":
-            menu.addAction(_("Elegir sensores…"), lambda: self.elegir_sensores(tarjeta.window()))
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
         if tarjeta.clave == "calendario":
@@ -4546,35 +3543,11 @@ class Monitor:
                 a.setCheckable(True)
                 a.setChecked(self.primer_dia() == dia)
             menu.addSeparator()
-        if tarjeta.clave == "juegos":
-            sub = menu.addMenu(_("Juego"))
-            for clave, nombre in juegos.JUEGOS:
-                a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.juego_vista.poner(c))
-                a.setCheckable(True)
-                a.setChecked(self.juego_vista.juego.nombre == clave)
-            menu.addAction(_("Nueva partida"), self.juego_vista.nueva)
-            menu.addSeparator()
-        if tarjeta.clave == "apps":
-            self.menu_apps(menu, tarjeta.window())
-        if tarjeta.clave == "immich":
-            menu.addAction(_("Abrir Immich"), self.abrir_immich)
-            menu.addAction(_("Conectar con Immich…"), lambda: self.conectar_immich(tarjeta.window()))
-            menu.addSeparator()
-        if tarjeta.clave == "docker":
-            self.menu_docker(menu)
-        if tarjeta.clave == "velocidad":
-            sub = menu.addMenu(_("Estilo del velocímetro"))
-            for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-                a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.cambiar_velocimetro(c))
-                a.setCheckable(True)
-                a.setChecked(self.vel_reloj.estilo == clave)
-            menu.addSeparator()
+        packs.llamar([p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())], "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
             menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
-        if tarjeta.clave == "discord":
-            self.menu_discord(menu, tarjeta.window())
         if self.modo == "panel" and not tarjeta.ventana and tarjeta.clave in self.panel.celdas:
             _x, _x, alto, ancho = self.panel.celdas[tarjeta.clave]
             sub = menu.addMenu(_("Tamaño en la cuadrícula"))
@@ -4690,20 +3663,6 @@ class Monitor:
             w["sub2"].setText(" · ".join(partes))
             w["graf"].push(g["util"], vram_pct)
 
-        # FPS
-        if self.fps:
-            f = s["fps"]
-            if f:
-                self.fps["big"].setText(f"{f['fps']:.0f} FPS")
-                self.fps["app"].setText(f["app"])
-                self.fps["sub"].setText(f"1% low {f['low1']:.0f} FPS · frametime {f['frametime']:.1f} ms")
-                self.fps["graf"].push(f["fps"], f["low1"])
-            else:
-                self.fps["big"].setText("—")
-                self.fps["app"].setText(_("Sin juegos ni apps 3D activos"))
-                self.fps["sub"].setText(s["fps_error"] or _("Abre un juego para medir sus FPS."))
-                self.fps["graf"].push(0, 0)
-
         # Red
         rx, tx = s["net"]
         self.red_big.setText(f"↓ {fmt_bytes(rx, True)}")
@@ -4721,9 +3680,8 @@ class Monitor:
                 lb.setText(f"{mount}  {fmt_bytes(used)} / {fmt_bytes(total)} · {pct:.0f} %")
                 barra.set(pct)
 
-        # Sensores
         self.ultimo = s
-        self.pintar_sensores(s)
+        packs.llamar(self.packs, "aplicar", self, s)
 
         self.ajustar_alturas()
 
@@ -5021,29 +3979,7 @@ class Monitor:
         t["ciudad"].setText(lugar + (_(" · sin conexión") if self.tiempo.error and d else ""))
         self.ajustar_alturas()
 
-    # --- Discord ----------------------------------------------------------------
-
-    def conectar_discord(self, padre=None):
-        # La aplicación de serie solo sirve si este MoonDeck trae su secreto (versión para amigos).
-        propio = self.discord.cfg.get("client_id")
-        dlg = DialogoDiscord(propio or (CLIENT_ID_POR_DEFECTO if CLIENT_SECRET_POR_DEFECTO else ""), padre)
-        if dlg.exec():
-            ident, secreto = dlg.id.text().strip(), dlg.secreto.text().strip()
-            if secreto or (CLIENT_SECRET_POR_DEFECTO and ident in ("", CLIENT_ID_POR_DEFECTO)):
-                self.discord.configurar(ident or CLIENT_ID_POR_DEFECTO, secreto)
-
-    def menu_discord(self, menu, padre=None):
-        recientes = self.config.get("discord_recientes", [])
-        if recientes and self.discord.estado == "conectado":
-            sub = menu.addMenu(_("Entrar en un canal reciente"))
-            for r in recientes:
-                sub.addAction(f"{r['nombre']} · {r['servidor']}" if r["servidor"] else r["nombre"],
-                              lambda _=False, i=r["id"]: self.discord.entrar(i))
-        menu.addAction(_("Conectar con Discord…") if self.discord.estado == "sin_config"
-                       else "Cambiar Client ID / Secret…", lambda: self.conectar_discord(padre))
-        if self.discord.estado != "sin_config":
-            menu.addAction(_("Desconectar de Discord (olvidar la autorización)"), self.discord.olvidar)
-        menu.addSeparator()
+    # --- escritorios virtuales -------------------------------------------------------
 
     def rueda(self, e):
         """Rueda abajo: escritorio siguiente; arriba: el anterior; Ctrl + rueda abajo: todos
@@ -5068,414 +4004,6 @@ class Monitor:
             self._rueda, self._rueda_t = 0.0, ahora
         e.accept()
         return True
-
-    # --- Immich y Docker -----------------------------------------------------------
-
-    def abrir_immich(self):
-        QDesktopServices.openUrl(QUrl(self.immich.url()))
-
-    def conectar_immich(self, padre=None):
-        dlg = DialogoImmich(self.immich.cfg.get("url") or IMMICH_URL, self.immich.cfg.get("clave", ""), padre)
-        if dlg.exec() == QDialog.Accepted:
-            self.immich.configurar(dlg.url.text(), dlg.clave.text())
-
-    def alternar_ia(self):
-        """Para o arranca el contenedor de la IA de Immich (y la activa o desactiva en Immich)."""
-        ml = contenedores.buscar(self.docker.instantanea()["contenedores"], "immich-machine-learning")
-        if not ml:
-            return
-        encendida = ml["estado"] == "running"
-        self.docker.accion(ml["nombre"], "stop" if encendida else "start")
-        self.immich.poner_ia(not encendida)
-
-    def alternar_docker(self):
-        """Para todos los contenedores en marcha o vuelve a arrancar los que se pararon así."""
-        lista = self.docker.instantanea()["contenedores"]
-        en_marcha = [c["nombre"] for c in lista if c["estado"] == "running"]
-        if en_marcha:
-            self.config["docker_parados"] = en_marcha
-            self.docker.accion(en_marcha, "stop")
-        else:
-            nombres = {c["nombre"] for c in lista}
-            self.docker.accion([n for n in self.config.pop("docker_parados", []) if n in nombres]
-                               or list(nombres), "start")
-        self.guardar_config()
-
-    def menu_docker(self, menu):
-        nombre, self.docker_sel = self.docker_sel, None
-        c = next((c for c in self.docker.instantanea()["contenedores"] if c["nombre"] == nombre), None)
-        if c:
-            if c["estado"] == "running":
-                menu.addAction(_("Parar {nombre}").format(nombre=nombre), lambda: self.docker.accion(nombre, "stop"))
-                menu.addAction(_("Reiniciar {nombre}").format(nombre=nombre),
-                               lambda: self.docker.accion(nombre, "restart"))
-            else:
-                menu.addAction(_("Iniciar {nombre}").format(nombre=nombre), lambda: self.docker.accion(nombre, "start"))
-            menu.addSeparator()
-
-    def actualizar_extras(self):
-        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
-            for v in self.ventanas():
-                v.setVisible(True)
-                v.raise_()
-                v.activateWindow()
-        self.actualizar_immich()
-        self.actualizar_docker()
-
-    def actualizar_immich(self):
-        im = self.im
-        s = self.immich.instantanea()
-        dk = self.docker.instantanea()
-        if (s["version"], dk["version"]) == im["version"]:
-            return
-        im["version"] = (s["version"], dk["version"])
-        ml = contenedores.buscar(dk["contenedores"], "immich-machine-learning")
-        if ml:
-            im["ia"].setText(_("Apagar la IA") if ml["estado"] == "running" else _("Encender la IA"))
-        im["ia"].setVisible(bool(ml))
-        estado, d = s["estado"], s["datos"]
-        aviso = {"sin_config": _("Conecta el widget con tu Immich (clave de API de administrador)."),
-                 "conectando": _("Conectando con Immich…")}.get(estado, "")
-        if estado == "error":
-            aviso = {"clave": _("Immich no acepta la clave de API."),
-                     "conexion": _("No se puede conectar con Immich ({url}).").format(url=self.immich.url())
-                     }.get(s["error"], _("Error de Immich: {error}").format(error=s["error"]))
-        im["aviso"].setText(aviso)
-        im["aviso"].setVisible(bool(aviso))
-        im["conectar"].setVisible(estado in ("sin_config", "error"))
-        ok = estado == "ok"
-        disco = d.get("disco") if ok else None
-        if disco:
-            recortar(im["disco"], _("Disco: {usado} de {total}").format(
-                usado=tam_legible(disco["usado"]), total=tam_legible(disco["total"])), ANCHO - 32)
-            im["barra"].set(disco["pct"])
-        for clave in ("disco", "barra"):
-            im[clave].setVisible(bool(disco))
-        for clave, texto in (("fotos", "{n} fotos · {tam}"), ("videos", "{n} vídeos · {tam}")):
-            n, uso = d.get(clave) if ok else None, d.get(f"uso_{clave}") if ok else None
-            if n is not None:
-                cifra = f"{n:,}".replace(",", ".")
-                recortar(im[clave], _(texto).format(n=cifra, tam=tam_legible(uso)) if uso is not None
-                         else _(texto.split(" · ")[0]).format(n=cifra), ANCHO - 32)
-            im[clave].setVisible(n is not None)
-        usuarios = d.get("usuarios", []) if ok else []
-        if [u["nombre"] for u in usuarios] != im["usuarios"]:
-            im["usuarios"] = [u["nombre"] for u in usuarios]
-            while im["caja_usuarios"].count():
-                im["caja_usuarios"].takeAt(0).widget().deleteLater()
-            for _u in usuarios:
-                im["caja_usuarios"].addWidget(etiqueta("", "dim"))
-        for i, u in enumerate(usuarios):
-            im["caja_usuarios"].itemAt(i).widget().setText(f"{u['nombre']}: {tam_legible(u['uso'])}")
-        im["lista_usuarios"].setVisible(len(usuarios) > 1)  # con un solo usuario no aporta nada
-        tareas = d.get("tareas") if ok else None
-        if tareas is not None:
-            lineas = [(_("{nombre}: {n} en marcha, {m} en espera") if activas else _("{nombre}: {m} en espera"))
-                      .format(nombre=_(nombre), n=activas, m=esperando) for nombre, activas, esperando in tareas[:4]]
-            im["tareas"].setText("\n".join(lineas) or _("Sin tareas pendientes"))
-        im["tareas"].setVisible(tareas is not None)
-        im["pie"].setText(_("Immich {version} · en línea").format(version=d.get("version", "")) if ok else "")
-        im["pie"].setVisible(ok)
-        self.ajustar_alturas()
-
-    def actualizar_docker(self):
-        dk = self.dk
-        s = self.docker.instantanea()
-        if s["version"] == dk["version"]:
-            return
-        dk["version"] = s["version"]
-        aviso = {"cargando": _("Leyendo los contenedores…"), "sin_docker": _("Docker no está instalado."),
-                 "sin_permiso": _("Sin permiso para usar Docker: cierra sesión y vuelve a entrar (grupo docker)."),
-                 "parado": _("Docker no está en marcha.")}.get(s["estado"], "")
-        if s["estado"] == "ok" and not s["contenedores"]:
-            aviso = _("No hay contenedores.")
-        dk["aviso"].setText(aviso)
-        dk["aviso"].setVisible(bool(aviso))
-        nombres = [c["nombre"] for c in s["contenedores"]]
-        if nombres != dk["orden"]:
-            dk["orden"] = nombres
-            for f in dk["filas"].values():
-                f.deleteLater()
-            dk["filas"] = {n: FilaDocker(self, n) for n in nombres}
-            for n in nombres:
-                dk["caja"].addWidget(dk["filas"][n])
-            dk["tarjeta"].prescindibles_grupo("contenedores", [dk["filas"][n] for n in nombres][::-1], 1)
-        for c in s["contenedores"]:
-            dk["filas"][c["nombre"]].actualizar(c)
-        dk["lista"].setVisible(bool(nombres))
-        dk["todo"].setText(_("Parar todos") if any(c["estado"] == "running" for c in s["contenedores"])
-                           else _("Iniciar todos"))
-        dk["todo"].setVisible(bool(nombres))
-        self.ajustar_alturas()
-
-    def menu_apps(self, menu, padre=None):
-        v = self.apps_vista
-        apps = v.apps()
-        i, v.menu_indice = v.menu_indice, None
-        menu.addAction(_("Añadir aplicación…"), lambda: self.anadir_apps(padre))
-        if i is not None and i < len(apps):
-            menu.addAction(_("Quitar {app}").format(app=apps[i]["nombre"]), lambda: self.mover_app(i, None))
-            if i > 0:
-                menu.addAction(_("Mover a la izquierda"), lambda: self.mover_app(i, i - 1))
-            if i < len(apps) - 1:
-                menu.addAction(_("Mover a la derecha"), lambda: self.mover_app(i, i + 1))
-        sub = menu.addMenu(_("Color de los iconos"))
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.color_apps(c))
-            a.setCheckable(True)
-            a.setChecked(self.config.get("apps_color", "original") == clave)
-        menu.addSeparator()
-
-    def anadir_apps(self, padre=None):
-        apps = self.apps_vista.apps()
-        dlg = SelectorApps({a["id"] for a in apps}, padre)
-        if dlg.exec() == QDialog.Accepted:
-            apps.extend(dlg.elegidas())
-            self.apps_vista.cambiado()
-            self.ajustar_alturas()
-
-    def mover_app(self, i, destino):
-        apps = self.apps_vista.apps()
-        a = apps.pop(i)
-        if destino is not None:
-            apps.insert(destino, a)
-        self.apps_vista.cambiado()
-        self.ajustar_alturas()
-
-    def color_apps(self, modo):
-        self.config["apps_color"] = modo
-        self.apps_vista.cambiado()
-
-    def recordar_canal(self, canal):
-        recientes = [r for r in self.config.get("discord_recientes", []) if r["id"] != canal["id"]]
-        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"],
-                             "guild_id": canal.get("guild_id")})
-        if recientes[:8] != self.config.get("discord_recientes"):
-            self.config["discord_recientes"] = recientes[:8]
-            self.guardar_config()
-
-    def vigilar_discord(self):
-        self.discord.vigilar(self.config["discord"]["servidores"])
-
-    def cambiar_discord(self, **cambios):
-        self.config["discord"].update(cambios)
-        self.guardar_config()
-        self.vigilar_discord()
-        self.dc["version"] = None
-
-    def abrir_discord(self):
-        self.discord_no_instalado = not abrir_discord()
-        if not self.discord_no_instalado:
-            self.discord_abriendo = time.monotonic()
-            self.discord._despertar.set()
-        self.dc["version"] = None
-
-    def entrar_ultimo_discord(self):
-        recientes = self.config.get("discord_recientes", [])
-        if recientes:
-            self.discord.entrar(recientes[0]["id"])
-
-    def al_conectar_discord(self, s):
-        """Tras abrir Discord desde el widget: entra en el último canal o donde haya gente."""
-        if not self.discord_abriendo or time.monotonic() - self.discord_abriendo > 120:
-            self.discord_abriendo = 0
-            return
-        if s["estado"] != "conectado" or (s["canales_voz"] is None and self.config["discord"]["servidores"]):
-            return  # aún arrancando o sin haber mirado los canales
-        self.discord_abriendo = 0
-        accion = self.config["discord"]["al_abrir"]
-        if s["canal"]:
-            return
-        if accion == "ultimo":
-            self.entrar_ultimo_discord()
-        elif accion == "gente":
-            canales = [c for c in s["canales_voz"] or [] if c["personas"]]
-            if canales:
-                self.discord.entrar(max(canales, key=lambda c: len(c["personas"]))["id"])
-
-    def boton_canal_discord(self, c, con_servidor):
-        b = QPushButton()
-        b.setProperty("estilo", "dispositivo")
-        b.setCursor(Qt.PointingHandCursor)
-        textos = QVBoxLayout(b)
-        textos.setContentsMargins(8, 5, 8, 5)
-        textos.setSpacing(0)
-        nombre = etiqueta("", "sub")
-        nombre.setStyleSheet("font-weight: 600;")
-        recortar(nombre, f"🔊 {c['nombre']}" + (f" · {len(c['personas'])}" if c["personas"] else ""), ANCHO - 48)
-        textos.addWidget(nombre)
-        lineas = ([", ".join(c["personas"])] if c["personas"] else []) + \
-                 ([c["servidor"]] if con_servidor and c["servidor"] else [])
-        for texto in lineas:
-            lb = etiqueta("", "dim")
-            recortar(lb, texto, ANCHO - 48)
-            textos.addWidget(lb)
-        for lb in b.findChildren(QLabel):
-            lb.setAttribute(Qt.WA_TransparentForMouseEvents)
-        b.setMinimumHeight(textos.sizeHint().height())
-        b.clicked.connect(lambda _=False, i=c["id"]: self.discord.entrar(i))
-        return b
-
-    def actualizar_discord(self):
-        d = self.dc
-        s = self.discord.instantanea()
-        if s["version"] == d["version"]:
-            return
-        d["version"] = s["version"]
-        estado, canal = s["estado"], s["canal"]
-        textos = {
-            "sin_config": _("Conecta el widget con tu cuenta para ver y controlar tu canal de voz."),
-            "desconectado": _("Discord no está abierto."),
-            "conectando": _("Conectando con Discord…"),
-            "autorizando": _("Mira Discord: te está pidiendo que autorices el widget."),
-        }
-        aviso = s["error"] if estado == "error" else textos.get(estado, "")
-        if estado == "desconectado" and self.discord_abriendo:
-            aviso = _("Abriendo Discord…")
-        elif estado == "desconectado" and self.discord_no_instalado:
-            aviso = _("No encuentro Discord instalado.")
-        elif estado == "conectado" and not canal:
-            aviso = (_("Elige tu servidor de Discord en Configuración > Widgets.")
-                     if not self.config["discord"]["servidores"] else
-                     _("Buscando canales…") if s["canales_voz"] is None else
-                     _("Nadie en voz ahora mismo.") if not any(c["personas"] for c in s["canales_voz"]) else "")
-        elif estado == "conectado" and s["error"]:
-            aviso = s["error"]
-        self.al_conectar_discord(s)
-        d["aviso"].setText(aviso)
-        d["aviso"].setVisible(bool(aviso))
-        d["conectar"].setVisible(estado in ("sin_config", "error"))
-        d["abrir"].setVisible(estado == "desconectado")
-        d["abrir"].setEnabled(not self.discord_abriendo)
-        en_canal = estado == "conectado" and bool(canal)
-
-        # Sin canal: los canales de voz de mi servidor para entrar con un clic.
-        canales = (s["canales_voz"] or []) if estado == "conectado" and not canal else []
-        ids = [(c["id"], tuple(c["personas"])) for c in canales]
-        if ids != d["canales_ids"]:
-            d["canales_ids"] = ids
-            while d["caja_canales"].count():
-                d["caja_canales"].takeAt(0).widget().deleteLater()
-            varios = len({c["guild_id"] for c in canales}) > 1
-            botones = [self.boton_canal_discord(c, varios) for c in canales]
-            for b in botones:
-                d["caja_canales"].addWidget(b)
-            # Si no caben, se quitan antes los vacíos (los últimos primero) y luego los demás.
-            vacios = [b for b, c in zip(botones, canales) if not c["personas"]]
-            llenos = [b for b, c in zip(botones, canales) if c["personas"]]
-            d["tarjeta"].prescindibles_grupo("canales", vacios[::-1] + llenos[::-1], 1)
-        d["canales"].setVisible(bool(canales))
-        recientes = self.config.get("discord_recientes", [])
-        ultimo = (estado == "conectado" and not canal and not self.config["discord"]["servidores"]
-                  and bool(recientes))
-        if ultimo:
-            d["ultimo"].setText(_("Entrar en {canal}").format(canal=recientes[0]["nombre"]))
-        d["ultimo"].setVisible(ultimo)
-        recortar(d["canal"], f"🔊 {canal['nombre']}" if en_canal else _("Sin canal de voz"), ANCHO - 32)
-        recortar(d["servidor"], canal["servidor"] if en_canal else "", ANCHO - 32)
-        d["servidor"].setVisible(en_canal and bool(canal["servidor"]))
-        d["controles"].setVisible(estado == "conectado")
-        d["salir"].setEnabled(en_canal)
-        if en_canal and canal["servidor"]:
-            self.recordar_canal(canal)
-        miembros = s["miembros"] if en_canal else []
-        ids = [m["id"] for m in miembros]
-        if ids != d["ids"]:
-            d["ids"] = ids
-            for f in d["filas"].values():
-                f.deleteLater()
-            d["filas"] = {}
-            for m in miembros:
-                f = FilaDiscord(self.discord, m["id"], m["id"] == s["yo"])
-                d["caja_lista"].addWidget(f)
-                d["filas"][m["id"]] = f
-            # Si no caben todos, se quitan los últimos de la lista.
-            d["tarjeta"].prescindibles_grupo("miembros", list(d["filas"].values())[::-1], 1)
-        for m in miembros:
-            d["filas"][m["id"]].actualizar(m, m["id"] in s["hablando"], self.discord.avatares.get(m["avatar"]))
-        d["lista"].setVisible(bool(miembros))
-        a = s["ajustes"]
-        d["mute"].setChecked(bool(a.get("mute")))
-        d["mute"].setText(_("Micro silenciado") if a.get("mute") else _("Silenciar"))
-        d["deaf"].setChecked(bool(a.get("deaf")))
-        d["deaf"].setText(_("Ensordecido") if a.get("deaf") else _("Ensordecer"))
-        for clave in ("entrada", "salida"):
-            sl, val, envio = d[clave]
-            v = a.get(clave)
-            if v is not None and time.monotonic() - getattr(sl, "_tocado", 0) > 1.5 and not envio.isActive() \
-                    and not sl.isSliderDown():
-                sl._actualizando = True
-                sl.setValue(round(v))
-                sl._actualizando = False
-            val.setText(f"{sl.value()} %")
-        self.ajustar_alturas()
-
-    # --- test de velocidad -----------------------------------------------------
-
-    @staticmethod
-    def fmt_mbps(v):
-        return f"{v:.0f} Mbps" if v >= 100 else f"{v:.1f} Mbps"
-
-    def iniciar_test(self):
-        self.test.iniciar()
-        self.t_velocidad.start()
-        self.actualizar_velocidad()
-
-    def actualizar_velocidad(self):
-        t = self.test
-        r = t.resultado
-        if t.midiendo:
-            p = t.parcial
-            fase = {"ping": _("Midiendo ping…"), "bajada": _("Midiendo bajada…"),
-                    "subida": _("Midiendo subida…")}.get(t.fase, _("Preparando…"))
-            self.vel_estado.setText(fase)
-            # La escala crece si hace falta (como el cambio de rango de un velocímetro), nunca encoge.
-            self._vel_tope = max(getattr(self, "_vel_tope", 0) or 0,
-                                 velocimetro.tope(t.actual if t.fase in ("bajada", "subida") else 0,
-                                                  p.get("bajada")))
-            if t.fase == "ping" or not t.fase:
-                self.vel_reloj.poner(0, self._vel_tope, "…", _("PING"), "amarillo", t.progreso, "ms")
-            else:
-                self.vel_reloj.poner(t.actual or 0, self._vel_tope, self.fmt_cifra(t.actual),
-                                     (_("Bajada") if t.fase == "bajada" else _("Subida")).upper(),
-                                     "azul" if t.fase == "bajada" else "morado", t.progreso)
-            partes = [f"↓ {self.fmt_mbps(p['bajada'])}" if "bajada" in p else None,
-                      f"ping {p['ping']:.0f} ms" if "ping" in p else None]
-            self.vel_resto.setText(" · ".join(x for x in partes if x) or " ")
-            self.vel_boton.setEnabled(False)
-            self.vel_boton.setText(_("Midiendo…"))
-            return
-        self.t_velocidad.stop()
-        self._vel_tope = 0
-        self.vel_boton.setEnabled(True)
-        self.vel_boton.setText(_("Repetir test") if r else _("Iniciar test"))
-        if r and r is not self.config.get("velocidad"):
-            self.config["velocidad"] = r
-            self.guardar_config()
-        if r:
-            self.vel_reloj.poner(r["bajada"], velocimetro.tope(r["bajada"]), self.fmt_cifra(r["bajada"]),
-                                 _("Bajada").upper())
-            self.vel_resto.setText(f"↑ {self.fmt_mbps(r['subida'])} · ping {r['ping']:.0f} ms")
-        else:
-            self.vel_reloj.poner(0, 100, "—", _("Bajada").upper())
-            self.vel_resto.setText(_("↑ — · ping —"))
-        if t.error:
-            self.vel_estado.setText(t.error)
-        else:
-            self.vel_estado.setText(_("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
-                                    _("Mide ping, bajada y subida (unos 15 s)."))
-
-    def cambiar_velocimetro(self, estilo):
-        self.config["velocimetro"] = estilo
-        self.vel_reloj.estilo = estilo
-        self.vel_reloj.update()
-        self.guardar_config()
-
-    @staticmethod
-    def fmt_cifra(v):
-        if not v:
-            return "0"
-        return f"{v:.0f}" if v >= 100 else f"{v:.1f}"
 
     # --- multimedia ---------------------------------------------------------
 

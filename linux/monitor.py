@@ -100,7 +100,6 @@ try:
 
     from glass import Blur, rounded_rects, superficie
     from escritorios import Escritorios, vista_general
-    from discord_voz import CLIENT_ID_POR_DEFECTO, CLIENT_SECRET_POR_DEFECTO, Discord, abrir_discord
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import tema as temas
@@ -109,14 +108,9 @@ try:
     from actualizar import Actualizador
     from version import REPO, VERSION
     from sensores import Sampler
-    from velocidad import TestVelocidad
     import velocimetro
     import esferas
-    import juegos
-    import lanzador
-    import contenedores
-    from immich import URL_POR_DEFECTO as IMMICH_URL, Immich, tam_legible
-    import dino_sprite
+    import packs
 except Exception:
     _excepthook(*sys.exc_info())
     sys.exit(1)
@@ -366,6 +360,8 @@ class LienzoCairo:
         """Un trozo de la hoja del dinosaurio, escalado sin suavizar (pixel art)."""
         clave = tuple(round(c, 3) for c in tinta[:3]) if tinta else None
         if clave not in self._hojas:
+            import dino_sprite
+            import juegos
             cargador = GdkPixbuf.PixbufLoader()
             cargador.write(dino_sprite.PNG)
             cargador.close()
@@ -519,355 +515,16 @@ class Barra(Dibujo):
             cr.fill()
 
 
-class Velocimetro(Dibujo):
-    """Test de velocidad como el velocímetro digital de un deportivo: arco de segmentos
-    que se encienden, la cifra en el centro y la fase encima."""
-
-    def __init__(self):
-        super().__init__()
-        self.poner_alto(56, 190)
-        self.set_vexpand(True)
-        self.valor = 0.0        # lo que marca ahora (se anima hacia el objetivo)
-        self.objetivo = 0.0
-        self.tope = 100
-        self.texto = "—"        # la cifra del centro
-        self.unidad = "Mbps"
-        self.fase = ""          # rótulo de encima
-        self.color = "azul"
-        self.progreso = None    # 0-1 mientras mide (arco fino exterior)
-        self.estilo = "deportivo"
-        self._animando = None
-        self.connect("draw", self.dibujar)
-
-    def poner(self, valor, tope, texto, fase, color="azul", progreso=None, unidad="Mbps"):
-        cambia = (texto, fase, color, progreso, tope, unidad) != (self.texto, self.fase, self.color,
-                                                                  self.progreso, self.tope, self.unidad)
-        self.objetivo = valor or 0.0
-        self.tope, self.texto, self.fase, self.color, self.progreso, self.unidad = (
-            tope, texto, fase, color, progreso, unidad)
-        if abs(self.objetivo - self.valor) > self.tope * 1e-4 and not self._animando:
-            self._animando = GLib.timeout_add(16, self._animar)
-        elif cambia:
-            self.queue_draw()
-
-    def _animar(self):
-        self.valor += (self.objetivo - self.valor) * 0.14
-        if abs(self.objetivo - self.valor) <= self.tope * 1e-4:
-            self.valor = self.objetivo
-            self._animando = None
-        self.queue_draw()
-        return self._animando is not None
-
-    def dibujar(self, _w, cr):
-        e = {"valor": self.valor, "tope": self.tope, "texto": self.texto, "fase": self.fase,
-             "color": self.color, "progreso": self.progreso, "unidad": self.unidad}
-        esferas.velocimetro(LienzoCairo(self, cr), paleta(), self.get_allocated_width(),
-                            self.get_allocated_height(), e, self.estilo)
 
 
-class VistaJuego(Dibujo):
-    """El minijuego en marcha (juegos.py): le pasa el ratón y el teclado y lo redibuja
-    cuando lo pide (cada frame mientras se mueve algo, cada segundo con el cronómetro)."""
-
-    TECLAS = {Gdk.KEY_Left: "izquierda", Gdk.KEY_a: "izquierda", Gdk.KEY_Right: "derecha", Gdk.KEY_d: "derecha",
-              Gdk.KEY_Up: "arriba", Gdk.KEY_w: "arriba", Gdk.KEY_Down: "abajo", Gdk.KEY_s: "abajo",
-              Gdk.KEY_space: "espacio", Gdk.KEY_n: "n"}
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.poner_alto(80, 280)  # en una celda pequeña se dibuja en pequeño, sin cortar
-        self.set_vexpand(True)
-        self.set_can_focus(True)
-        self.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.KEY_RELEASE_MASK)
-        self._timer = None
-        self.connect("draw", self.dibujar)
-        self.connect("button-press-event", self._pulsar)
-        self.connect("button-release-event", self._soltar)
-        self.connect("key-press-event", lambda _w, ev: self._tecla(ev, True))
-        self.connect("key-release-event", lambda _w, ev: self._tecla(ev, False))
-        self.connect("map", lambda _w: self._programar())
-        cfg = app.config.setdefault("juegos", {})
-        self.poner(cfg.get("actual", "buscaminas"))
-
-    def poner(self, nombre):
-        cfg = self.app.config.setdefault("juegos", {})
-        cfg["actual"] = nombre
-        self.juego = juegos.crear(nombre, cfg.setdefault(nombre, {}), self.app.guardar_config)
-        self.queue_draw()
-        self._programar()
-
-    def nueva(self):
-        self.juego.nueva()
-        self.queue_draw()
-        self._programar()
-
-    def _programar(self):
-        ms = self.juego.siguiente_frame()
-        if ms and self._timer is None and self.get_mapped():
-            self._timer = GLib.timeout_add(ms, self._frame)
-
-    def _frame(self):
-        self._timer = None
-        self.queue_draw()
-        self._programar()
-        return False
-
-    def _pulsar(self, _w, ev):
-        tarjeta = self.get_ancestor(Tarjeta)
-        if tarjeta and tarjeta.en_edicion():
-            return False
-        if ev.type != Gdk.EventType.BUTTON_PRESS:
-            return ev.button == 1  # los dobles clics llegan además como un evento aparte
-        if ev.button == 1:
-            self.grab_focus()  # para las flechas y el espacio
-        usado = self.juego.pulsar(ev.x, ev.y, ev.button)
-        self.queue_draw()
-        self._programar()
-        return usado or ev.button == 1  # el clic derecho que no usa el juego abre el menú
-
-    def _soltar(self, _w, ev):
-        usado = self.juego.soltar(ev.x, ev.y, ev.button)
-        self.queue_draw()
-        self._programar()
-        return usado
-
-    def _tecla(self, ev, pulsada):
-        nombre = self.TECLAS.get(Gdk.keyval_to_lower(ev.keyval))
-        if nombre and self.juego.tecla(nombre, pulsada):
-            self.queue_draw()
-            self._programar()
-            return True
-        return False
-
-    def dibujar(self, _w, cr):
-        self.juego.dibujar(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height())
 
 
-class VistaApps(Dibujo):
-    """Lanzador: los iconos de las apps que elige el usuario; un clic las abre. Con el clic
-    derecho sobre un icono, el menú de la tarjeta trae quitarlo o moverlo."""
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.encima = None        # icono bajo el ratón
-        self.menu_indice = None   # icono sobre el que se abrió el menú
-        self._iconos = {}         # (id, color, escala) -> superficie de cairo
-        self._alto = None
-        self.add_events(Gdk.EventMask.LEAVE_NOTIFY_MASK)
-        self.connect("draw", self.dibujar)
-        self.connect("size-allocate", lambda _w, r: self._ajustar(r.width))
-        self.connect("motion-notify-event", self._mover)
-        self.connect("leave-notify-event", lambda *_a: self._poner_encima(None))
-        self.connect("button-press-event", self._pulsar)
-        self.set_vexpand(True)  # ocupa toda la celda: los iconos se centran en ella
-        self.poner_alto(lanzador.TAM)
-
-    def apps(self):
-        return self.app.config.setdefault("apps", [])
-
-    def cambiado(self):
-        self.app.guardar_config()
-        self._ajustar(self.get_allocated_width())
-        self.queue_draw()
-
-    def _ajustar(self, ancho):
-        _pos, alto = lanzador.rejilla(len(self.apps()), ancho)
-        alto = max(lanzador.TAM, alto)
-        if alto != self._alto:
-            self._alto = alto
-            self.poner_alto(alto)
-
-    def _indice(self, x, y):
-        pos, _alto = lanzador.rejilla(len(self.apps()), self.get_allocated_width(), self.get_allocated_height())
-        return next((i for i, (ix, iy) in enumerate(pos)
-                     if ix <= x < ix + lanzador.TAM and iy <= y < iy + lanzador.TAM), None)
-
-    def _poner_encima(self, i):
-        if i != self.encima:
-            self.encima = i
-            self.queue_draw()
-
-    def _mover(self, _w, ev):
-        self._poner_encima(self._indice(ev.x, ev.y))
-
-    def _pulsar(self, _w, ev):
-        tarjeta = self.get_ancestor(Tarjeta)
-        if (tarjeta and tarjeta.en_edicion()) or ev.type != Gdk.EventType.BUTTON_PRESS:
-            return False
-        i = self._indice(ev.x, ev.y)
-        if ev.button == 3:
-            self.menu_indice = i
-            return False  # el menú de la tarjeta
-        if ev.button == 1 and i is not None:
-            self.abrir(self.apps()[i])
-            return True
-        return False
-
-    def abrir(self, a):
-        try:
-            Gio.DesktopAppInfo.new(a["id"]).launch([], None)
-        except (TypeError, GLib.Error) as e:
-            log("No se pudo abrir", a["id"], e)
-
-    def _icono(self, a, color):
-        escala = self.get_scale_factor()
-        clave = (a["id"], color, escala)
-        if clave not in self._iconos:
-            pb = None
-            info = Gio.DesktopAppInfo.new(a["id"]) if a["id"] else None
-            gicon = info.get_icon() if info else None
-            tema = Gtk.IconTheme.get_default()
-            for g in (gicon, Gio.ThemedIcon.new("application-x-executable")):
-                if not g:
-                    continue
-                datos = tema.lookup_by_gicon_for_scale(g, lanzador.TAM, escala, Gtk.IconLookupFlags.FORCE_SIZE)
-                try:
-                    pb = datos.load_icon() if datos else None
-                except GLib.Error:
-                    pb = None
-                if pb:
-                    break
-            if pb and color:
-                if not pb.get_has_alpha():
-                    pb = pb.add_alpha(False, 0, 0, 0)
-                w, h, fila = pb.get_width(), pb.get_height(), pb.get_rowstride()
-                crudo = pb.get_pixels()
-                rgba = b"".join(crudo[y * fila:y * fila + w * 4] for y in range(h))
-                datos = lanzador.tenir_icono(rgba, color)
-                pb = GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(datos), GdkPixbuf.Colorspace.RGB, True, 8,
-                                                     w, h, w * 4)
-            self._iconos[clave] = Gdk.cairo_surface_create_from_pixbuf(pb, escala, None) if pb else None
-        return self._iconos[clave]
-
-    def dibujar(self, _w, cr):
-        apps = self.apps()
-        ancho = self.get_allocated_width()
-        if not apps:
-            lay = capa_texto(self, cr, _("Clic derecho > Añadir aplicación…"), 12)
-            pintar_texto(cr, lay, 0, 0, ancho, self.get_allocated_height(), GRIS, 0.5, 0.5, recortar=True)
-            return
-        modo = self.app.config.get("apps_color", "original")
-        color = {"acento": COLORES["azul"], "texto": BLANCO}.get(modo)
-        pos, _alto = lanzador.rejilla(len(apps), ancho, self.get_allocated_height())
-        t = lanzador.TAM
-        for i, (a, (x, y)) in enumerate(zip(apps, pos)):
-            if i == self.encima:
-                cr.set_source_rgba(*TENUE[:3], 0.14)
-                rect_redondeado(cr, x - 3, y - 3, t + 6, t + 6, 9)
-                cr.fill()
-            sup = self._icono(a, color)
-            if sup:
-                cr.set_source_surface(sup, x, y)
-                cr.paint()
 
 
-class SelectorApps(Gtk.Dialog):
-    """Elegir apps instaladas (las de los menús del sistema) para el lanzador."""
-
-    def __init__(self, ya):
-        super().__init__(title=_("Añadir aplicación"))
-        self.set_default_size(420, 520)
-        self.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
-        self.add_button(_("Añadir"), Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
-        cont = self.get_content_area()
-        cont.set_spacing(8)
-        for lado in ("start", "end", "top", "bottom"):
-            getattr(cont, f"set_margin_{lado}")(10)
-        self.buscar = Gtk.SearchEntry()
-        self.buscar.connect("search-changed", lambda _e: self.lista.invalidate_filter())
-        cont.pack_start(self.buscar, False, False, 0)
-        self.lista = Gtk.ListBox(selection_mode=Gtk.SelectionMode.MULTIPLE)
-        self.lista.set_activate_on_single_click(False)
-        self.lista.connect("row-activated", lambda *_a: self.response(Gtk.ResponseType.OK))
-        self.lista.set_filter_func(lambda fila: self.buscar.get_text().lower() in fila.nombre.lower())
-        apps = sorted((a for a in Gio.AppInfo.get_all() if a.should_show() and a.get_id() not in ya),
-                      key=lambda a: a.get_display_name().lower())
-        for a in apps:
-            fila = Gtk.ListBoxRow()
-            fila.id, fila.nombre = a.get_id(), a.get_display_name()
-            f = caja(False, 10)
-            for lado in ("start", "end", "top", "bottom"):
-                getattr(f, f"set_margin_{lado}")(4)
-            img = Gtk.Image.new_from_gicon(a.get_icon(), Gtk.IconSize.DND) if a.get_icon() else Gtk.Image()
-            f.pack_start(img, False, False, 0)
-            f.pack_start(Gtk.Label(label=fila.nombre, xalign=0), True, True, 0)
-            fila.add(f)
-            self.lista.add(fila)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_vexpand(True)
-        scroll.add(self.lista)
-        cont.pack_start(scroll, True, True, 0)
-        self.show_all()
-
-    def elegidas(self):
-        return [{"id": f.id, "nombre": f.nombre} for f in self.lista.get_selected_rows()]
 
 
-class FilaDocker(Gtk.EventBox):
-    """Un contenedor: punto de color, nombre y, a la derecha, tiempo, CPU y RAM."""
-
-    def __init__(self, app, nombre):
-        super().__init__()
-        self.app, self.nombre = app, nombre
-        self.color = "verde"
-        fila = caja(False, 8)
-        self.punto = Gtk.DrawingArea()
-        self.punto.set_size_request(10, 10)
-        self.punto.set_valign(Gtk.Align.CENTER)
-        self.punto.connect("draw", self._punto)
-        fila.pack_start(self.punto, False, False, 0)
-        self.lb_nombre = etiqueta(nombre, "sub")
-        fila.pack_start(self.lb_nombre, True, True, 0)
-        self.lb_datos = Gtk.Label(xalign=1)
-        self.lb_datos.get_style_context().add_class("dim")
-        fila.pack_start(self.lb_datos, False, False, 0)
-        self.add(fila)
-        self.connect("button-press-event", self._pulsar)
-        self.show_all()
-
-    def _punto(self, _w, cr):
-        cr.arc(5, 5, 4, 0, 2 * math.pi)
-        cr.set_source_rgb(*COLORES[self.color])
-        cr.fill()
-
-    def _pulsar(self, _w, ev):
-        if ev.button == 3:
-            self.app.docker_sel = self.nombre  # el menú de la tarjeta trae parar, iniciar…
-        return False
-
-    def actualizar(self, c):
-        color = contenedores.color(c)
-        if color != self.color:
-            self.color = color
-            self.punto.queue_draw()
-        partes = [contenedores.hace(c["desde"])] + ([c["cpu"], c["ram"]] if c["estado"] == "running" else [])
-        poner_texto(self.lb_datos, " · ".join(p for p in partes if p))
 
 
-class DialogoImmich(Gtk.Dialog):
-    """La dirección de Immich y una clave de API."""
-
-    def __init__(self, url, clave):
-        super().__init__(title=_("Conectar con Immich"))
-        self.set_default_size(480, -1)
-        self.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
-        self.add_button(_("Conectar"), Gtk.ResponseType.OK).get_style_context().add_class("suggested-action")
-        self.set_default_response(Gtk.ResponseType.OK)
-        area = self.get_content_area()
-        area.set_spacing(8)
-        area.set_border_width(16)
-        ayuda = Gtk.Label(xalign=0, wrap=True, max_width_chars=60)
-        ayuda.set_markup(_("En Immich: tu foto (arriba a la derecha) > <b>Ajustes de la cuenta</b> > <b>Claves de API</b> "
-                           "> <b>Nueva clave de API</b>. Copia la clave y pégala aquí."))
-        area.pack_start(ayuda, False, False, 0)
-        for etiq, attr, valor, oculto in (("Dirección", "url", url, False), ("Clave de API", "clave", clave, True)):
-            area.pack_start(Gtk.Label(label=_(etiq), xalign=0), False, False, 0)
-            e = Gtk.Entry(text=valor, visibility=not oculto, activates_default=True)
-            setattr(self, attr, e)
-            area.pack_start(e, False, False, 0)
-        self.show_all()
 
 
 class BarrasNucleos(Dibujo):
@@ -1194,165 +851,12 @@ class FilaVolumen(Gtk.Box):
 # Discord: canal de voz
 # ---------------------------------------------------------------------------
 
-def cargar_pixbuf(datos, tam):
-    """Bytes de imagen -> pixbuf cuadrado de tam x tam (recortado al centro), o None."""
-    if not datos:
-        return None
-    try:
-        cargador = GdkPixbuf.PixbufLoader()
-        cargador.write(datos)
-        cargador.close()
-        img = cargador.get_pixbuf()
-    except GLib.Error:
-        return None
-    pw, ph = img.get_width(), img.get_height()
-    lado = min(pw, ph)
-    return img.new_subpixbuf((pw - lado) // 2, (ph - lado) // 2, lado, lado).scale_simple(
-        tam, tam, GdkPixbuf.InterpType.BILINEAR)
 
 
-class Avatar(Dibujo):
-    """Avatar redondo; con un aro verde mientras la persona habla."""
-
-    TAM = 26
-
-    def __init__(self):
-        super().__init__()
-        self.set_size_request(self.TAM + 4, self.TAM + 4)
-        self.set_valign(Gtk.Align.CENTER)
-        self.pixbuf = None
-        self.url = None
-        self.hablando = False
-        self.inicial = "?"
-        self.connect("draw", self.dibujar)
-
-    def poner(self, url, datos, inicial):
-        self.inicial = (inicial or "?")[:1].upper()
-        if url != self.url or (datos and not self.pixbuf):
-            self.url = url
-            self.pixbuf = cargar_pixbuf(datos, self.TAM * max(1, self.get_scale_factor()))
-            self.queue_draw()
-
-    def set_hablando(self, si):
-        if si != self.hablando:
-            self.hablando = si
-            self.queue_draw()
-
-    def dibujar(self, _w, cr):
-        r = self.TAM / 2
-        c = r + 2
-        if self.hablando:
-            cr.arc(c, c, r + 1.5, 0, 2 * math.pi)
-            cr.set_source_rgb(*COLORES["verde"])
-            cr.set_line_width(2.5)
-            cr.stroke()
-        cr.arc(c, c, r - (1 if self.hablando else 0), 0, 2 * math.pi)
-        cr.clip()
-        if self.pixbuf:
-            escala = self.pixbuf.get_width() / self.TAM
-            cr.translate(2, 2)
-            cr.scale(1 / escala, 1 / escala)
-            Gdk.cairo_set_source_pixbuf(cr, self.pixbuf, 0, 0)
-            cr.paint()
-        else:
-            cr.set_source_rgb(*hex_rgb("5865f2"))  # azul de Discord
-            cr.paint()
-            lay = capa_texto(self, cr, self.inicial, 12, Pango.Weight.BOLD)
-            pintar_texto(cr, lay, 2, 2, self.TAM, self.TAM, (1, 1, 1), 0.5)
 
 
-class FilaDiscord(Gtk.Box):
-    """Una persona del canal: avatar, nombre, micro/cascos y su volumen (solo para mí)."""
-
-    def __init__(self, discord, uid, soy_yo):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.discord = discord
-        self.uid = uid
-        self._enviar = None
-        self._actualizando = False
-        arriba = caja(False, 8)
-        self.avatar = Avatar()
-        arriba.pack_start(self.avatar, False, False, 0)
-        self.nombre = etiqueta("", "sub")
-        arriba.pack_start(self.nombre, True, True, 0)
-        self.i_micro = Gtk.Image.new_from_icon_name("microphone-disabled-symbolic", Gtk.IconSize.MENU)
-        self.i_cascos = Gtk.Image.new_from_icon_name("audio-volume-muted-symbolic", Gtk.IconSize.MENU)
-        self.i_micro.set_tooltip_text(_("Micrófono desactivado"))
-        self.i_cascos.set_tooltip_text(_("Ensordecido"))
-        for i in (self.i_micro, self.i_cascos):
-            i.get_style_context().add_class("rojo")
-            i.set_no_show_all(True)
-            arriba.pack_start(i, False, False, 0)
-        self.b_vol = None
-        self.revelar = None
-        if not soy_yo:
-            self.b_vol = boton_icono("audio-volume-high-symbolic", Gtk.IconSize.MENU)
-            self.b_vol.set_tooltip_text(_("Volumen de esta persona (solo para ti)"))
-            self.b_vol.connect("clicked", lambda _b: self.revelar.set_reveal_child(not self.revelar.get_reveal_child()))
-            arriba.pack_start(self.b_vol, False, False, 0)
-        self.pack_start(arriba, False, False, 0)
-        if not soy_yo:
-            self.revelar = Gtk.Revealer()
-            fila = caja(False, 6)
-            fila.set_margin_start(34)
-            self.slider = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 200, 1)
-            self.slider.set_draw_value(False)
-            self.slider.set_can_focus(False)
-            self.slider.add_mark(100, Gtk.PositionType.BOTTOM, None)
-            self.slider.connect("value-changed", self._cambio)
-            fila.pack_start(self.slider, True, True, 0)
-            self.valor = Gtk.Label(xalign=1)
-            self.valor.get_style_context().add_class("dim")
-            self.valor.set_size_request(38, -1)
-            fila.pack_start(self.valor, False, False, 0)
-            self.b_mute = boton_texto("Silenciar", "normal")
-            self.b_mute.set_tooltip_text(_("Silenciar a esta persona solo para ti"))
-            self.b_mute.connect("clicked", lambda _b: self.discord.silenciar_usuario(self.uid, not self._mute))
-            fila.pack_start(self.b_mute, False, False, 0)
-            self.revelar.add(fila)
-            self.pack_start(self.revelar, False, False, 0)
-        self._mute = False
-        self.show_all()
-
-    def _cambio(self, s):
-        v = round(s.get_value())
-        poner_texto(self.valor, f"{v} %")
-        if self._actualizando:
-            return
-        # Al arrastrar, como mucho una orden cada 150 ms (Discord limita las peticiones).
-        self._pendiente = v
-        if not self._enviar:
-            self._enviar = GLib.timeout_add(150, self._mandar)
-
-    def _mandar(self):
-        self._enviar = None
-        self.discord.volumen_usuario(self.uid, self._pendiente)
-        return False
-
-    def actualizar(self, m, hablando, avatar):
-        poner_texto(self.nombre, m["nombre"] + (_(" · bot") if m["bot"] else ""))
-        clases(self.nombre, verde=hablando)
-        self.avatar.poner(m["avatar"], avatar, m["nombre"])
-        self.avatar.set_hablando(hablando)
-        self.i_micro.set_visible(m["micro_off"] and not m["ensordecido"])
-        self.i_cascos.set_visible(m["ensordecido"])
-        if self.revelar:
-            self._mute = m["silenciado_local"]
-            self.b_mute.set_label(_("Activar") if self._mute else _("Silenciar"))
-            clases(self.b_mute, marcado=self._mute)
-            poner_icono(self.b_vol, "audio-volume-muted-symbolic" if self._mute else "audio-volume-high-symbolic",
-                        Gtk.IconSize.MENU)
-            if not self._enviar:
-                self._actualizando = True
-                self.slider.set_value(m["volumen"])
-                self._actualizando = False
-                poner_texto(self.valor, f"{round(m['volumen'])} %")
 
 
-def guia_discord():
-    """La guía paso a paso de Discord en GitHub (en español o en inglés)."""
-    nombre = "DISCORD.md" if idioma.actual() == "es" else "DISCORD.en.md"
-    return f"https://github.com/{REPO}/blob/main/docs/{nombre}"
 
 
 def abrir_web(url):
@@ -1362,62 +866,6 @@ def abrir_web(url):
         log("No se pudo abrir", url, e)
 
 
-class DialogoDiscord(Gtk.Dialog):
-    """Conectar con Discord paso a paso: pide el Client ID y el Client Secret."""
-
-    def __init__(self, client_id):
-        super().__init__(title=_("Conectar con Discord"))
-        self.set_default_size(560, -1)
-        self.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
-        ok = self.add_button(_("Conectar"), Gtk.ResponseType.OK)
-        ok.get_style_context().add_class("suggested-action")
-        self.set_default_response(Gtk.ResponseType.OK)
-        area = self.get_content_area()
-        area.set_spacing(10)
-        area.set_border_width(16)
-
-        def texto(marcado, dim=False):
-            lb = Gtk.Label(xalign=0, wrap=True, max_width_chars=64)
-            lb.set_markup(marcado)
-            if dim:
-                lb.get_style_context().add_class("dim-label")
-            area.pack_start(lb, False, False, 0)
-            return lb
-
-        texto(_("Discord solo deja controlar la voz a aplicaciones registradas. Crea la tuya "
-                "(gratis, una sola vez, unos 3 minutos):"))
-        if CLIENT_SECRET_POR_DEFECTO:
-            texto(_("<b>¿Te han invitado como tester de la aplicación de MoonDeck?</b> Acepta la invitación, "
-                    "deja el Client Secret vacío y pulsa Conectar."))
-        pasos = (
-            _("Abre <b>discord.com/developers</b> y pulsa <b>New Application</b> (el nombre da igual)."),
-            _("En <b>OAuth2</b>, copia el <b>Client ID</b>; pulsa <b>Reset Secret</b> y copia el <b>Client Secret</b>."),
-            _("En la misma página, en <b>Redirects</b>: <b>Add Redirect</b>, escribe <tt>http://localhost</tt> "
-              "y pulsa <b>Save Changes</b>."),
-            _("Pega aquí los dos datos y pulsa <b>Conectar</b>. Con Discord abierto, acepta <b>Autorizar</b>."),
-        )
-        for n, paso in enumerate(pasos, 1):
-            texto(f"<b>{n}.</b>  {paso}")
-        botones = caja(False, 6)
-        for etiq, url in ((_("Abrir discord.com/developers"), "https://discord.com/developers/applications"),
-                          (_("Ver la guía paso a paso"), guia_discord())):
-            b = Gtk.Button(label=etiq)
-            b.connect("clicked", lambda _b, u=url: abrir_web(u))
-            botones.pack_start(b, False, False, 0)
-        area.pack_start(botones, False, False, 0)
-        rejilla = Gtk.Grid(column_spacing=10, row_spacing=8)
-        rejilla.set_margin_top(6)
-        self.id = Gtk.Entry(text=client_id, hexpand=True)
-        self.id.set_placeholder_text(_("Un número largo, de OAuth2 > Client ID"))
-        self.secreto = Gtk.Entry(visibility=False, hexpand=True, activates_default=True)
-        self.secreto.set_placeholder_text(_("Vacío = el de la aplicación de MoonDeck") if CLIENT_SECRET_POR_DEFECTO
-                                          else _("De OAuth2 > Reset Secret"))
-        for fila, (nombre, campo) in enumerate((("Client ID", self.id), ("Client Secret", self.secreto))):
-            rejilla.attach(Gtk.Label(label=nombre, xalign=0), 0, fila, 1, 1)
-            rejilla.attach(campo, 1, fila, 1, 1)
-        area.pack_start(rejilla, False, False, 0)
-        texto(_("Se guardan solo en tu equipo."), dim=True)
-        self.show_all()
 
 
 # ---------------------------------------------------------------------------
@@ -1902,255 +1350,12 @@ TIPOS_SENSOR = {
 MAX_SENSORES = 40
 
 
-def fmt_sensor(tipo, valor):
-    formato = TIPOS_SENSOR.get(tipo, (tipo, "{:.2f}"))[1]
-    if formato == "rpm":
-        return f"{valor:,.0f} RPM".replace(",", ".") if valor > 0 else _("parado")
-    if formato == "bytes/s":
-        return fmt_bytes(valor, True)
-    return formato.format(valor)
 
 
-def seleccion_auto(sensores):
-    """Lo que se ve si no se ha elegido nada: temperaturas con sentido, y los
-    ventiladores de las GPUs (paran en reposo) y los que giran."""
-    temps, por_dispositivo, vistos = [], {}, set()
-    for kind, hw, tipo, nombre, valor, ident in sensores:
-        if tipo != "Temperature" or "distance" in nombre.lower() or not 5 < valor < 115:
-            continue
-        # Como mucho dos por dispositivo (la placa tiene muchos) y sin repetidos.
-        if (hw, nombre) in vistos or por_dispositivo.get(hw, 0) >= 2:
-            continue
-        vistos.add((hw, nombre))
-        por_dispositivo[hw] = por_dispositivo.get(hw, 0) + 1
-        temps.append(ident)
-    fans = [x[5] for x in sensores if x[2] == "Fan" and (x[0].startswith("Gpu") or x[4] > 0)]
-    fans += [x[5] for x in sensores if x[2] == "Control" and x[0].startswith("Gpu")]
-    return temps[:12] + fans[:6]
 
 
-class ListaSensores(Dibujo):
-    """Lista de sensores que se adapta al espacio: varias columnas si es ancha y, si
-    aun así no caben, los que quepan y "… y N más" (en vez de aplastar las filas)."""
-
-    FILA = 19
-    ANCHO_COLUMNA = 250
-    ANCHO_VALOR = 84
-
-    def __init__(self):
-        super().__init__()
-        self.lineas = []   # ("seccion", texto) o ("sensor", nombre, valor, color)
-        self.set_vexpand(True)
-        self.connect("draw", self.dibujar)
-
-    def set_lineas(self, lineas):
-        cambia_alto = len(lineas) != len(self.lineas)
-        self.lineas = lineas
-        if cambia_alto:
-            self.queue_resize()
-        self.queue_draw()
-
-    def columnas(self, ancho):
-        return max(1, min(ancho // self.ANCHO_COLUMNA, len(self.lineas) or 1))
-
-    def do_get_request_mode(self):
-        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
-
-    def do_get_preferred_width(self):
-        return 100, ANCHO - 32
-
-    def do_get_preferred_height_for_width(self, ancho):
-        return self.FILA * 3, max(self.FILA * 3, -(-len(self.lineas) // self.columnas(ancho)) * self.FILA)
-
-    def do_get_preferred_height(self):
-        return self.do_get_preferred_height_for_width(ANCHO - 32)
-
-    @staticmethod
-    def huecos(lineas, por_columna):
-        """Posición de cada línea: un título nunca queda el último de una columna."""
-        posiciones, hueco = [], 0
-        for linea in lineas:
-            if linea[0] == "seccion" and hueco % por_columna == por_columna - 1:
-                hueco += 1
-            posiciones.append(hueco)
-            hueco += 1
-        return posiciones, hueco
-
-    def dibujar(self, _w, cr):
-        w, h = self.get_allocated_width(), self.get_allocated_height()
-        cols = self.columnas(w)
-        maximo = max(1, h // self.FILA)
-        lineas = self.lineas
-        por_columna = -(-len(lineas) // cols) or 1
-        while por_columna < maximo and self.huecos(lineas, por_columna)[1] > cols * por_columna:
-            por_columna += 1
-        if por_columna > maximo or self.huecos(lineas, por_columna)[1] > cols * por_columna:
-            por_columna = maximo
-            while lineas and self.huecos(lineas, por_columna)[1] > cols * por_columna - 1:
-                lineas = lineas[:-1]
-            ocultas = sum(1 for x in self.lineas[len(lineas):] if x[0] == "sensor")
-            lineas = lineas + [("mas", _("… y {n} más (amplía el widget)").format(n=ocultas))]
-        posiciones, _x = self.huecos(lineas, por_columna)
-        ancho_col = (w - 16 * (cols - 1)) / cols
-        for i, linea in zip(posiciones, lineas):
-            x = (i // por_columna) * (ancho_col + 16)
-            y = (i % por_columna) * self.FILA
-            if linea[0] == "seccion":
-                lay = capa_texto(self, cr, linea[1], 10, Pango.Weight.BOLD)
-                pintar_texto(cr, lay, x, y, ancho_col, self.FILA, TITULO, v_al=0.9)
-            elif linea[0] == "mas":
-                lay = capa_texto(self, cr, linea[1], 12.5)
-                pintar_texto(cr, lay, x, y, w - x, self.FILA, GRIS, recortar=True)
-            else:
-                _x, nombre, valor, color = linea
-                lay = capa_texto(self, cr, valor, 12.5)
-                pintar_texto(cr, lay, x, y, ancho_col, self.FILA, hex_rgb(color), 1.0)
-                lay = capa_texto(self, cr, nombre, 12.5)
-                # Corte por el medio: se ve el dispositivo y el nombre del sensor.
-                pintar_texto(cr, lay, x, y, ancho_col - self.ANCHO_VALOR, self.FILA, NORMAL,
-                             recortar="medio")
 
 
-class SelectorSensores(Gtk.Dialog):
-    """Ventana para marcar qué sensores se muestran, agrupados por dispositivo y tipo."""
-
-    # Columnas del modelo
-    TEXTO, VALOR, MARCA, MEDIO, IDENT, BUSCA, VISIBLE = range(7)
-
-    def __init__(self, sensores, seleccion):
-        super().__init__(title=_("Elegir sensores"))
-        self.set_default_size(600, 680)
-        self.get_style_context().add_class("selector")
-        self.add_button(_("Por defecto"), 1)
-        self.add_button(_("Ninguno"), 2)
-        self.add_button(_("Cancelar"), Gtk.ResponseType.CANCEL)
-        aceptar = self.add_button(_("Aceptar"), Gtk.ResponseType.OK)
-        aceptar.get_style_context().add_class("suggested-action")
-        self.set_default_response(Gtk.ResponseType.OK)
-        area = self.get_content_area()
-        area.set_spacing(8)
-        area.set_border_width(10)
-        area.pack_start(Gtk.Label(label=_("Marca los sensores que quieres ver en el widget Sensores "
-                                                  "(hasta {n}).").format(n=MAX_SENSORES), xalign=0), False, False, 0)
-        self.buscar = Gtk.SearchEntry()
-        self.buscar.set_placeholder_text(_("Buscar: «cpu», «voltaje», «fan», «nvme»…"))
-        self.buscar.connect("search-changed", lambda e: self.filtrar(e.get_text()))
-        area.pack_start(self.buscar, False, False, 0)
-
-        self.modelo = Gtk.TreeStore(str, str, bool, bool, str, str, bool)
-        marcados = set(seleccion)
-        dispositivos = {}
-        for kind, hw, tipo, nombre, valor, ident in sensores:
-            if hw not in dispositivos:
-                dispositivos[hw] = (self.modelo.append(None, [hw, "", False, False, "", hw.lower(), True]), {})
-            disp, secciones = dispositivos[hw]
-            seccion_txt = _(TIPOS_SENSOR.get(tipo, (tipo,))[0])
-            if seccion_txt not in secciones:
-                secciones[seccion_txt] = self.modelo.append(disp, [seccion_txt, "", False, False, "", "", True])
-            self.modelo.append(secciones[seccion_txt], [
-                nombre, fmt_sensor(tipo, valor), ident in marcados, False, ident,
-                f"{hw} {seccion_txt} {tipo} {nombre}".lower(), True])
-        self.recalcular_padres()
-
-        self.filtro = self.modelo.filter_new()
-        self.filtro.set_visible_column(self.VISIBLE)
-        self.arbol = Gtk.TreeView(model=self.filtro)
-        self.arbol.set_headers_visible(True)
-        marca = Gtk.CellRendererToggle()
-        marca.connect("toggled", self.marcar)
-        col = Gtk.TreeViewColumn(_("Sensor"))
-        col.pack_start(marca, False)
-        col.add_attribute(marca, "active", self.MARCA)
-        col.add_attribute(marca, "inconsistent", self.MEDIO)
-        texto = Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)
-        col.pack_start(texto, True)
-        col.add_attribute(texto, "text", self.TEXTO)
-        col.set_expand(True)
-        self.arbol.append_column(col)
-        valor = Gtk.CellRendererText(xalign=1.0)
-        self.arbol.append_column(Gtk.TreeViewColumn(_("Valor"), valor, text=self.VALOR))
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_vexpand(True)
-        scroll.add(self.arbol)
-        area.pack_start(scroll, True, True, 0)
-        # Abiertos los grupos con algo marcado, para ver de un vistazo lo elegido.
-        self.expandir_marcados()
-        self.show_all()
-
-    def hojas(self, it=None):
-        it = self.modelo.iter_children(it)
-        while it:
-            if self.modelo.iter_has_child(it):
-                yield from self.hojas(it)
-            elif self.modelo[it][self.IDENT]:
-                yield it
-            it = self.modelo.iter_next(it)
-
-    def recalcular_padres(self, it=None):
-        """Marca de los grupos: llena si todo está marcado, a medias si solo algo."""
-        estados = []
-        hijo = self.modelo.iter_children(it)
-        while hijo:
-            if self.modelo.iter_has_child(hijo):
-                estados.append(self.recalcular_padres(hijo))
-            else:
-                estados.append("si" if self.modelo[hijo][self.MARCA] else "no")
-            hijo = self.modelo.iter_next(hijo)
-        if it is None:
-            return None
-        estado = "si" if all(e == "si" for e in estados) else "no" if all(e == "no" for e in estados) else "medio"
-        self.modelo[it][self.MARCA] = estado == "si"
-        self.modelo[it][self.MEDIO] = estado == "medio"
-        return estado
-
-    def marcar(self, _r, ruta_filtro):
-        it = self.filtro.convert_iter_to_child_iter(self.filtro.get_iter(ruta_filtro))
-        nuevo = not self.modelo[it][self.MARCA] or self.modelo[it][self.MEDIO]
-        if self.modelo.iter_has_child(it):
-            for h in self.hojas(it):
-                if self.modelo[h][self.VISIBLE]:
-                    self.modelo[h][self.MARCA] = nuevo
-        else:
-            self.modelo[it][self.MARCA] = nuevo
-        self.recalcular_padres()
-
-    def expandir_marcados(self):
-        def recorrer(it):
-            while it:
-                if self.modelo.iter_has_child(it) and (self.modelo[it][self.MARCA] or self.modelo[it][self.MEDIO]):
-                    ok, f = self.filtro.convert_child_iter_to_iter(it)
-                    if ok:
-                        self.arbol.expand_row(self.filtro.get_path(f), False)
-                    recorrer(self.modelo.iter_children(it))
-                it = self.modelo.iter_next(it)
-        recorrer(self.modelo.get_iter_first())
-
-    def filtrar(self, texto):
-        texto = texto.lower().strip()
-
-        def recorrer(it):
-            alguno = False
-            while it:
-                if self.modelo.iter_has_child(it):
-                    v = recorrer(self.modelo.iter_children(it))
-                else:
-                    v = not texto or texto in self.modelo[it][self.BUSCA]
-                self.modelo[it][self.VISIBLE] = v
-                alguno = alguno or v
-                it = self.modelo.iter_next(it)
-            return alguno
-        recorrer(self.modelo.get_iter_first())
-        self.filtro.refilter()
-        if texto:
-            self.arbol.expand_all()
-
-    def ninguno(self):
-        for h in self.hojas():
-            self.modelo[h][self.MARCA] = False
-        self.recalcular_padres()
-
-    def seleccion(self):
-        return [self.modelo[h][self.IDENT] for h in self.hojas() if self.modelo[h][self.MARCA]][:MAX_SENSORES]
 
 
 # ---------------------------------------------------------------------------
@@ -3216,7 +2421,7 @@ class VentanaConfig(Gtk.Window):
 
     PAGINAS = (("tema", "Tema"), ("ajustes", "Widgets"), ("widgets", "Tarjetas · modo widgets"),
                ("panel", "Tarjetas · modo panel"), ("fondo", "Fondo del panel"), ("disposicion", "Disposición"),
-               ("general", "General"))
+               ("packs", "Packs"), ("general", "General"))
 
     def __init__(self, app):
         super().__init__(title=_("Configuración · MoonDeck"))
@@ -3461,41 +2666,7 @@ class VentanaConfig(Gtk.Window):
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
 
-        lista = self.grupo(cont, "Test de velocidad")
-        estilo = Gtk.ComboBoxText()
-        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-            estilo.append(clave, _(nombre))
-        estilo.set_active_id(app.vel_reloj.estilo)
-        estilo.connect("changed", lambda w: app.cambiar_velocimetro(w.get_active_id()))
-        self.fila(lista, "Estilo del velocímetro", estilo)
-
-        lista = self.grupo(cont, "Discord")
-        o = app.config["discord"]
-        al_abrir = Gtk.ComboBoxText()
-        for clave, nombre in (("nada", "Solo mostrar los canales"), ("ultimo", "Entrar en el último canal"),
-                              ("gente", "Entrar donde haya más gente")):
-            al_abrir.append(clave, _(nombre))
-        al_abrir.set_active_id(o["al_abrir"])
-        al_abrir.connect("changed", lambda w: app.cambiar_discord(al_abrir=w.get_active_id()))
-        self.fila(lista, "Al abrir Discord desde el widget", al_abrir)
-        servidores = app.discord.instantanea()["servidores"]
-        lista = self.grupo(cont, "Tu servidor de Discord",
-                           "Sus canales de voz salen en el widget cuando no estás en ninguno; pulsa uno para entrar.")
-        if not servidores:
-            self.fila(lista, "Abre Discord para ver tus servidores", Gtk.Label())
-        for g in servidores:
-            sw = Gtk.Switch(active=g["id"] in o["servidores"])
-            sw.connect("notify::active", lambda w, _p, i=g["id"]: app.cambiar_discord(
-                servidores=[e for e in o["servidores"] if e != i] + ([i] if w.get_active() else [])))
-            self.fila(lista, g["nombre"], sw)
-
-        lista = self.grupo(cont, "Aplicaciones", "Añade apps con el clic derecho en el widget de aplicaciones.")
-        color = Gtk.ComboBoxText()
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            color.append(clave, _(nombre))
-        color.set_active_id(app.config.get("apps_color", "original"))
-        color.connect("changed", lambda w: app.color_apps(w.get_active_id()))
-        self.fila(lista, "Color de los iconos", color, "Los del tema se adaptan al cambiar de tema")
+        packs.llamar(app.packs, "ajustes", self, cont)
 
         lista = self.grupo(cont, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
         sin = app.config.get("sin_titulo", [])
@@ -3589,6 +2760,54 @@ class VentanaConfig(Gtk.Window):
             t.clave: list(t.ventana.pos) for t in self.app.tarjetas if t.ventana}
         self.app.guardar_config()
         self.construir()
+
+    def pagina_packs(self, cont):
+        """Los packs de widgets: borrar los que no se usan y volver a descargarlos de GitHub."""
+        app = self.app
+        g = app.gestor_packs
+        lista = self.grupo(cont, "Packs de widgets", "Borra los que no uses; puedes volver a descargarlos de "
+                                                     "GitHub cuando quieras. Se aplica al reiniciar MoonDeck.")
+        for ident, nombre, texto, widgets, _x in packs.CATALOGO:
+            if not packs.borrable(ident):
+                control = Gtk.Label(label=_("Incluido"))
+                control.get_style_context().add_class("dim-label")
+            elif g.ocupado_con == ident:
+                control = Gtk.Button(label=_("Descargando…"), sensitive=False)
+            elif g.instalado(ident):
+                control = Gtk.Button(label=_("Borrar"), sensitive=not g.ocupado and not g.desde_codigo)
+                control.get_style_context().add_class("destructive-action")
+                if g.desde_codigo:
+                    control.set_tooltip_text(_("Ejecutando desde el código: aquí no se borra nada."))
+                control.connect("clicked", lambda _b, i=ident: (g.borrar(i), self.construir("packs")))
+            else:
+                control = Gtk.Button(label=_("Descargar"), sensitive=not g.ocupado)
+                control.get_style_context().add_class("suggested-action")
+                control.connect("clicked", lambda _b, i=ident: self.descargar_pack(i))
+            self.fila(lista, nombre, control, _(texto) + "\n" + " · ".join(_(w) for w in widgets))
+        aviso = (_("No se pudo descargar: {error}").format(error=g.error) if g.estado == "error" else
+                 _("Reinicia MoonDeck para ver los cambios.") if g.cambiado else "")
+        if aviso:
+            fila = caja(False, 8)
+            lb = Gtk.Label(label=aviso, xalign=0, wrap=True, max_width_chars=60)
+            fila.pack_start(lb, True, True, 0)
+            if g.cambiado and g.estado != "error":
+                reiniciar = Gtk.Button(label=_("Reiniciar ahora"))
+                reiniciar.get_style_context().add_class("suggested-action")
+                reiniciar.connect("clicked", lambda _b: app.actualizador.reiniciar(app.salir))
+                fila.pack_start(reiniciar, False, False, 0)
+            cont.pack_start(fila, False, False, 0)
+
+    def descargar_pack(self, ident):
+        self.app.gestor_packs.descargar(ident)
+        self.construir("packs")
+
+        def mirar():
+            if self.app.gestor_packs.ocupado:
+                return True
+            if self.get_visible():
+                self.construir("packs")
+            return False
+        GLib.timeout_add(300, mirar)
 
     def pagina_general(self, cont):
         app = self.app
@@ -3731,7 +2950,11 @@ class VentanaConfig(Gtk.Window):
 # Aplicación
 # ---------------------------------------------------------------------------
 
-class Monitor:
+# Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
+PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
+
+
+class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def __init__(self):
         self.colocado = False
         log("Capas (gtk-layer-shell):", CAPAS, "| bandeja:", bool(AppIndicator), "| efecto:", EFECTO)
@@ -3768,21 +2991,14 @@ class Monitor:
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
         self.dispositivos = Dispositivos()
-        self.test = TestVelocidad()
-        self.test.resultado = self.config.get("velocidad")
-        self.discord = Discord(CARPETA)
         self.escritorios = Escritorios()
-        self.immich = Immich(CARPETA)
-        self.docker = contenedores.Docker()
-        self.docker_sel = None  # contenedor sobre el que se abrió el menú
         self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
-        self.config["discord"] = dict(DISCORD_POR_DEFECTO, **self.config.get("discord", {}))
-        self.discord_no_instalado = False
-        self.discord_abriendo = 0  # cuándo se pulsó "Abrir Discord" (para lo que haya que hacer al conectar)
-        self.vigilar_discord()
         self.actualizador = Actualizador(os.path.dirname(os.path.abspath(__file__)))
         self.tiempo = Tiempo(self.config.get("tiempo_ciudad") or CIUDAD_POR_DEFECTO)
-        self.t_velocidad = None  # solo corre mientras se mide
+        self.actualizador.omitir = packs.omitidos(self.config.get("packs_borrados", []))
+        self.gestor_packs = packs.Gestor(self.actualizador.carpeta, self.config, self.guardar_config)
+        self.packs = PACKS
+        packs.llamar(self.packs, "iniciar", self)
         log("Audio:", "OK" if self.mezclador.ok else self.mezclador.error,
             "| reproductores:", "OK" if self.reproductores.ok else self.reproductores.error)
 
@@ -3798,7 +3014,7 @@ class Monitor:
         self.actualizar_multimedia()
         self.actualizar_reloj()
         self.actualizar_audio()
-        self.actualizar_velocidad()
+        packs.llamar(self.packs, "arrancar", self)
 
         self.bandeja = None
         if AppIndicator:
@@ -3817,7 +3033,6 @@ class Monitor:
         GLib.timeout_add(1000, self.actualizar_multimedia)
         GLib.timeout_add(1000, self.actualizar_reloj)
         GLib.timeout_add(2000, self.actualizar_audio)
-        GLib.timeout_add(150, self.actualizar_discord)  # rápido: quién habla
         GLib.timeout_add(1000, self.actualizar_tiempo)
         GLib.timeout_add(40, self.parpadear)
         self._activo = True
@@ -3881,11 +3096,6 @@ class Monitor:
             # Si no caben, se van quitando las últimas particiones.
             n = len(partes) - i
             self.particiones[mount] = (c.add_w(etiqueta(), prescindible=n), c.add_w(Barra(), prescindible=n))
-
-        # Sensores: los elegidos en "Elegir sensores…" (o una selección automática).
-        c = self.tarjeta("temperaturas", "Sensores")
-        self.sens_lista = c.add_w(ListaSensores(), expand=True)
-        self.construir_sensores(s)
 
         # Multimedia: lo que suena y volumen por app
         c = self.tarjeta("multimedia", "Multimedia")
@@ -3970,160 +3180,8 @@ class Monitor:
         a["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         self.audio = a
 
-        # Discord: el canal de voz en el que estoy
-        c = self.tarjeta("discord", "Discord")
-        d = {"version": None, "filas": {}, "ids": None}
-        d["canal"] = c.add_w(etiqueta("", "sub"))
-        d["canal"].get_style_context().add_class("negrita")
-        d["servidor"] = c.add_w(etiqueta("", "dim"))
-        d["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
-        d["conectar"] = c.add_w(boton_texto("Conectar con Discord…", "principal"))
-        d["conectar"].connect("clicked", lambda _b: self.conectar_discord())
-        d["abrir"] = c.add_w(boton_texto("Abrir Discord", "principal"))
-        d["abrir"].connect("clicked", lambda _b: self.abrir_discord())
-        d["canales"] = c.add_w(caja(True, 4))
-        d["canales_ids"] = None
-        d["ultimo"] = c.add_w(boton_texto("", "normal"))
-        d["ultimo"].connect("clicked", lambda _b: self.entrar_ultimo_discord())
-        d["lista"] = c.add_w(caja(True, 4))
-        d["lista"].set_margin_top(4)
-        d["controles"] = caja(True, 4)
-        d["controles"].set_margin_top(6)
-        for clave, texto, maximo, fn in (("entrada", "Micro", 100, self.discord.volumen_entrada),
-                                         ("salida", "Salida", 200, self.discord.volumen_salida)):
-            fila = caja(False, 6)
-            lb = etiqueta(texto, "sub")
-            lb.set_size_request(50, -1)
-            lb.set_hexpand(False)
-            fila.pack_start(lb, False, False, 0)
-            sl = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, maximo, 1)
-            sl.set_draw_value(False)
-            sl.set_can_focus(False)
-            sl._tocado = 0
-            sl.connect("value-changed", lambda s, fn=fn: self._volumen_discord(s, fn))
-            fila.pack_start(sl, True, True, 0)
-            val = Gtk.Label(xalign=1)
-            val.get_style_context().add_class("dim")
-            val.set_size_request(38, -1)
-            sl._valor = val
-            fila.pack_start(val, False, False, 0)
-            d[clave] = (sl, val)
-            d["controles"].pack_start(fila, False, False, 0)
-        botones = caja(False, 6)
-        d["mute"] = boton_texto("Silenciar", "normal")
-        d["deaf"] = boton_texto("Ensordecer", "normal")
-        d["salir"] = boton_texto("Salir", "normal")
-        d["salir"].get_style_context().add_class("rojo")
-        d["mute"].connect("clicked", lambda _b: self.discord.silenciar(not self.discord.ajustes.get("mute")))
-        d["deaf"].connect("clicked", lambda _b: self.discord.ensordecer(not self.discord.ajustes.get("deaf")))
-        d["salir"].connect("clicked", lambda _b: self.discord.salir())
-        for b in (d["mute"], d["deaf"], d["salir"]):
-            botones.pack_start(b, True, True, 0)
-        d["controles"].pack_start(botones, False, False, 0)
-        c.add_w(d["controles"])
-        d["tarjeta"] = c
-        self.dc = d
-
-        # Test de velocidad
-        c = self.tarjeta("velocidad", "Test de velocidad")
-        self.vel_reloj = c.add_w(Velocimetro(), expand=True)
-        self.vel_reloj.estilo = self.config.get("velocimetro", "deportivo")
-        self.vel_resto = c.add_w(etiqueta(), prescindible=2)
-        self.vel_resto.set_xalign(0.5)
-        self.vel_estado = c.add_w(etiqueta("", "dim", envolver=True), prescindible=1)
-        self.vel_estado.set_justify(Gtk.Justification.CENTER)
-        self.vel_estado.set_xalign(0.5)
-        self.vel_boton = c.add_w(boton_texto("Iniciar test", "principal"))
-        self.vel_boton.connect("clicked", lambda _b: self.iniciar_test())
-
-        # Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (se elige con el clic derecho).
-        c = self.tarjeta("juegos", "Juegos")
-        self.juego_vista = c.add_w(VistaJuego(self), expand=True)
-
-        # Aplicaciones: un lanzador con los iconos que elija el usuario.
-        c = self.tarjeta("apps", "Aplicaciones")
-        self.apps_vista = c.add_w(VistaApps(self), expand=True)
-
-        # Immich: espacio, lo que ocupa la biblioteca y las tareas en cola.
-        c = self.tarjeta("immich", "Immich")
-        im = {"version": None, "usuarios": None}
-        im["disco"] = c.add_w(etiqueta("", "sub"))
-        im["barra"] = c.add_w(Barra())
-        im["fotos"] = c.add_w(etiqueta("", "sub"), prescindible=4)
-        im["videos"] = c.add_w(etiqueta("", "sub"), prescindible=4)
-        im["lista_usuarios"] = c.add_w(caja(True, 2), prescindible=3)
-        im["tareas"] = c.add_w(etiqueta("", "dim", envolver=True), prescindible=2)
-        im["pie"] = c.add_w(etiqueta("", "dim"), prescindible=5)
-        im["ia"] = c.add_w(boton_texto("", "normal"))
-        im["ia"].connect("clicked", lambda _b: self.alternar_ia())
-        im["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
-        im["conectar"] = c.add_w(boton_texto("Conectar con Immich…", "principal"))
-        im["conectar"].connect("clicked", lambda _b: self.conectar_immich())
-        self.im = im
-
-        # Docker: los contenedores, con su estado.
-        c = self.tarjeta("docker", "Docker")
-        dk = {"version": None, "filas": {}, "orden": None}
-        dk["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
-        dk["lista"] = c.add_w(caja(True, 6))
-        dk["todo"] = c.add_w(boton_texto("", "normal"))
-        dk["todo"].connect("clicked", lambda _b: self.alternar_docker())
-        dk["tarjeta"] = c
-        self.dk = dk
-        GLib.timeout_add(1000, self.actualizar_extras)
-
-    # --- sensores ------------------------------------------------------------
-
-    def construir_sensores(self, s):
-        """Decide qué sensores muestra el widget Sensores y en qué orden (por tipo)."""
-        elegidos = self.config.get("sensores")
-        if elegidos is None:
-            elegidos = seleccion_auto(s["sensores"])
-        tipos = {x[5]: x[2] for x in s["sensores"]}
-        orden = list(dict.fromkeys(v[0] for v in TIPOS_SENSOR.values()))
-        por_seccion = {}
-        for ident in elegidos:
-            if ident in tipos:
-                seccion = TIPOS_SENSOR.get(tipos[ident], (tipos[ident],))[0]
-                por_seccion.setdefault(seccion, []).append(ident)
-        self.sens_secciones = [(sec, por_seccion[sec]) for sec in
-                               sorted(por_seccion, key=lambda x: orden.index(x) if x in orden else 99)]
-        self.pintar_sensores(s)
-
-    def pintar_sensores(self, s):
-        valores = {x[5]: x for x in s["sensores"]}
-        lineas = []
-        for seccion, idents in self.sens_secciones:
-            if len(self.sens_secciones) > 1:
-                lineas.append(("seccion", _(seccion).upper()))
-            for ident in idents:
-                x = valores.get(ident)
-                if x:
-                    _x, hw, tipo, nombre, valor, _x = x
-                    color = color_temp(valor) if tipo == "Temperature" else temas.a_hex(CLARO)
-                    lineas.append(("sensor", f"{hw} · {nombre}", fmt_sensor(tipo, valor), color))
-        if not lineas:
-            lineas = [("mas", _("Ningún sensor elegido: clic derecho > «Elegir sensores…»"))]
-        self.sens_lista.set_lineas(lineas)
-
-    def elegir_sensores(self):
-        s = getattr(self, "ultimo", None)
-        if not s:
-            return
-        actual = self.config.get("sensores")
-        dialogo = SelectorSensores(s["sensores"], seleccion_auto(s["sensores"]) if actual is None else actual)
-        while True:
-            r = dialogo.run()
-            if r == 2:
-                dialogo.ninguno()
-                continue
-            break
-        if r in (Gtk.ResponseType.OK, 1):
-            self.config["sensores"] = None if r == 1 else dialogo.seleccion()
-            self.construir_sensores(s)
-            self.aplicar(s)
-            self.guardar_config()
-        dialogo.destroy()
+        # Lo de los packs (pack_*.py)
+        packs.llamar(self.packs, "construir", self, s)
 
     # --- escritorios virtuales -------------------------------------------------------
 
@@ -4153,188 +3211,7 @@ class Monitor:
             self._rueda, self._rueda_t = 0.0, ahora
         return True
 
-    # --- Immich y Docker -----------------------------------------------------------
-
-    def abrir_immich(self):
-        Gio.AppInfo.launch_default_for_uri(self.immich.url(), None)
-        return True
-
-    def conectar_immich(self):
-        dlg = DialogoImmich(self.immich.cfg.get("url") or IMMICH_URL, self.immich.cfg.get("clave", ""))
-        if dlg.run() == Gtk.ResponseType.OK:
-            self.immich.configurar(dlg.url.get_text(), dlg.clave.get_text())
-        dlg.destroy()
-
-    def alternar_ia(self):
-        """Para o arranca el contenedor de la IA de Immich (y la activa o desactiva en Immich)."""
-        ml = contenedores.buscar(self.docker.instantanea()["contenedores"], "immich-machine-learning")
-        if not ml:
-            return
-        encendida = ml["estado"] == "running"
-        self.docker.accion(ml["nombre"], "stop" if encendida else "start")
-        self.immich.poner_ia(not encendida)
-
-    def alternar_docker(self):
-        """Para todos los contenedores en marcha o vuelve a arrancar los que se pararon así."""
-        lista = self.docker.instantanea()["contenedores"]
-        en_marcha = [c["nombre"] for c in lista if c["estado"] == "running"]
-        if en_marcha:
-            self.config["docker_parados"] = en_marcha
-            self.docker.accion(en_marcha, "stop")
-        else:
-            nombres = {c["nombre"] for c in lista}
-            self.docker.accion([n for n in self.config.pop("docker_parados", []) if n in nombres]
-                               or list(nombres), "start")
-        self.guardar_config()
-
-    def menu_docker(self, menu):
-        nombre, self.docker_sel = self.docker_sel, None
-        c = next((c for c in self.docker.instantanea()["contenedores"] if c["nombre"] == nombre), None)
-        if c:
-            if c["estado"] == "running":
-                self.item(menu, _("Parar {nombre}").format(nombre=nombre), lambda: self.docker.accion(nombre, "stop"))
-                self.item(menu, _("Reiniciar {nombre}").format(nombre=nombre),
-                          lambda: self.docker.accion(nombre, "restart"))
-            else:
-                self.item(menu, _("Iniciar {nombre}").format(nombre=nombre), lambda: self.docker.accion(nombre, "start"))
-            menu.append(Gtk.SeparatorMenuItem())
-
-    def actualizar_extras(self):
-        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
-            for v in self.ventanas():
-                v.set_visible(True)
-                v.present()
-        self.actualizar_immich()
-        self.actualizar_docker()
-        return True
-
-    def actualizar_immich(self):
-        im = self.im
-        s = self.immich.instantanea()
-        dk = self.docker.instantanea()
-        if (s["version"], dk["version"]) == im["version"]:
-            return
-        im["version"] = (s["version"], dk["version"])
-        ml = contenedores.buscar(dk["contenedores"], "immich-machine-learning")
-        if ml:
-            encendida = ml["estado"] == "running"
-            im["ia"].set_label(_("Apagar la IA") if encendida else _("Encender la IA"))
-            clases(im["ia"], marcado=not encendida)
-        im["ia"].set_visible(bool(ml))
-        estado, d = s["estado"], s["datos"]
-        aviso = {"sin_config": _("Conecta el widget con tu Immich (clave de API de administrador)."),
-                 "conectando": _("Conectando con Immich…")}.get(estado, "")
-        if estado == "error":
-            aviso = {"clave": _("Immich no acepta la clave de API."),
-                     "conexion": _("No se puede conectar con Immich ({url}).").format(url=self.immich.url())
-                     }.get(s["error"], _("Error de Immich: {error}").format(error=s["error"]))
-        poner_texto(im["aviso"], aviso)
-        im["aviso"].set_visible(bool(aviso))
-        im["conectar"].set_visible(estado in ("sin_config", "error"))
-        ok = estado == "ok"
-        disco = d.get("disco") if ok else None
-        if disco:
-            poner_texto(im["disco"], _("Disco: {usado} de {total}").format(
-                usado=tam_legible(disco["usado"]), total=tam_legible(disco["total"])))
-            im["barra"].set(disco["pct"])
-        for clave in ("disco", "barra"):
-            im[clave].set_visible(bool(disco))
-        for clave, texto in (("fotos", "{n} fotos · {tam}"), ("videos", "{n} vídeos · {tam}")):
-            n, uso = d.get(clave) if ok else None, d.get(f"uso_{clave}") if ok else None
-            if n is not None:
-                cifra = f"{n:,}".replace(",", ".")
-                poner_texto(im[clave], _(texto).format(n=cifra, tam=tam_legible(uso)) if uso is not None
-                            else _(texto.split(" · ")[0]).format(n=cifra))
-            im[clave].set_visible(n is not None)
-        usuarios = d.get("usuarios", []) if ok else []
-        if [u["nombre"] for u in usuarios] != im["usuarios"]:
-            im["usuarios"] = [u["nombre"] for u in usuarios]
-            for w in im["lista_usuarios"].get_children():
-                w.destroy()
-            for u in usuarios:
-                im["lista_usuarios"].pack_start(etiqueta("", "dim"), False, False, 0)
-            im["lista_usuarios"].show_all()
-        for lb, u in zip(im["lista_usuarios"].get_children(), usuarios):
-            poner_texto(lb, f"{u['nombre']}: {tam_legible(u['uso'])}")
-        im["lista_usuarios"].set_visible(len(usuarios) > 1)  # con un solo usuario no aporta nada
-        tareas = d.get("tareas") if ok else None
-        if tareas is not None:
-            lineas = [(_("{nombre}: {n} en marcha, {m} en espera") if activas else _("{nombre}: {m} en espera"))
-                      .format(nombre=_(nombre), n=activas, m=esperando) for nombre, activas, esperando in tareas[:4]]
-            poner_texto(im["tareas"], "\n".join(lineas) or _("Sin tareas pendientes"))
-        im["tareas"].set_visible(tareas is not None)
-        poner_texto(im["pie"], _("Immich {version} · en línea").format(version=d.get("version", "")) if ok else "")
-        im["pie"].set_visible(ok)
-        self.ajustar_alturas()
-
-    def actualizar_docker(self):
-        dk = self.dk
-        s = self.docker.instantanea()
-        if s["version"] == dk["version"]:
-            return
-        dk["version"] = s["version"]
-        aviso = {"cargando": _("Leyendo los contenedores…"), "sin_docker": _("Docker no está instalado."),
-                 "sin_permiso": _("Sin permiso para usar Docker: cierra sesión y vuelve a entrar (grupo docker)."),
-                 "parado": _("Docker no está en marcha.")}.get(s["estado"], "")
-        if s["estado"] == "ok" and not s["contenedores"]:
-            aviso = _("No hay contenedores.")
-        poner_texto(dk["aviso"], aviso)
-        dk["aviso"].set_visible(bool(aviso))
-        nombres = [c["nombre"] for c in s["contenedores"]]
-        if nombres != dk["orden"]:
-            dk["orden"] = nombres
-            for f in dk["filas"].values():
-                f.destroy()
-            dk["filas"] = {n: FilaDocker(self, n) for n in nombres}
-            for n in nombres:
-                dk["lista"].pack_start(dk["filas"][n], False, False, 0)
-            dk["tarjeta"].prescindibles_grupo("contenedores", [dk["filas"][n] for n in nombres][::-1], 1)
-        for c in s["contenedores"]:
-            dk["filas"][c["nombre"]].actualizar(c)
-        dk["lista"].set_visible(bool(nombres))
-        dk["todo"].set_label(_("Parar todos") if any(c["estado"] == "running" for c in s["contenedores"])
-                             else _("Iniciar todos"))
-        dk["todo"].set_visible(bool(nombres))
-        self.ajustar_alturas()
-
     # --- aplicaciones ---------------------------------------------------------------
-
-    def menu_apps(self, menu):
-        v = self.apps_vista
-        apps = v.apps()
-        i, v.menu_indice = v.menu_indice, None
-        self.item(menu, "Añadir aplicación…", self.anadir_apps)
-        if i is not None and i < len(apps):
-            self.item(menu, _("Quitar {app}").format(app=apps[i]["nombre"]), lambda: self.mover_app(i, None))
-            if i > 0:
-                self.item(menu, "Mover a la izquierda", lambda: self.mover_app(i, i - 1))
-            if i < len(apps) - 1:
-                self.item(menu, "Mover a la derecha", lambda: self.mover_app(i, i + 1))
-        sub = self.submenu(menu, "Color de los iconos")
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            self.item(sub, nombre, lambda c=clave: self.color_apps(c), self.config.get("apps_color", "original") == clave)
-        menu.append(Gtk.SeparatorMenuItem())
-
-    def anadir_apps(self):
-        apps = self.apps_vista.apps()
-        dlg = SelectorApps({a["id"] for a in apps})
-        if dlg.run() == Gtk.ResponseType.OK:
-            apps.extend(dlg.elegidas())
-            self.apps_vista.cambiado()
-            self.ajustar_alturas()
-        dlg.destroy()
-
-    def mover_app(self, i, destino):
-        apps = self.apps_vista.apps()
-        a = apps.pop(i)
-        if destino is not None:
-            apps.insert(destino, a)
-        self.apps_vista.cambiado()
-        self.ajustar_alturas()
-
-    def color_apps(self, modo):
-        self.config["apps_color"] = modo
-        self.apps_vista.cambiado()
 
     # --- títulos de los widgets ---------------------------------------------------
 
@@ -4527,9 +3404,7 @@ class Monitor:
                     if t.ventana:
                         t.ventana.show()
             self.medir_area(monitor, colocar)
-        self.discord.permitir(any(t.clave == "discord" for t in self.visibles()))
-        self.immich.permitir(any(t.clave == "immich" for t in self.visibles()))
-        self.docker.permitir(any(t.clave in ("docker", "immich") for t in self.visibles()))  # Immich: su IA
+        packs.llamar(self.packs, "visibles", self, {t.clave for t in self.visibles()})
         self.rehacer_bandeja()
 
     def ventana_para(self, tarjeta, encima, monitor, pos=None):
@@ -4665,7 +3540,7 @@ class Monitor:
         visibles = self.visibles()
         for t in self.tarjetas:
             self.item(sub, t.nombre_menu, lambda t=t: self.alternar_widget(t), t in visibles)
-        self.item(menu, "Elegir sensores…", self.elegir_sensores)
+        packs.llamar(self.packs, "acciones", self, menu)
         if self.modo == "widgets":
             self.listar_pantallas(self.submenu(menu, "Recolocar widgets en..."), self.recolocar)
             self.listar_pantallas(self.submenu(menu, "Modo panel (pantalla completa) en..."),
@@ -4700,8 +3575,6 @@ class Monitor:
                       round(tarjeta.opacidad * 100) == nivel)
         sub.append(Gtk.SeparatorMenuItem())
         self.item(sub, "Aplicar a todos los widgets", lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
-        if tarjeta.clave == "temperaturas":
-            self.item(menu, "Elegir sensores…", self.elegir_sensores)
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
         if tarjeta.clave == "calendario":
@@ -4709,27 +3582,7 @@ class Monitor:
             for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
                 self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
             menu.append(Gtk.SeparatorMenuItem())
-        if tarjeta.clave == "discord":
-            self.menu_discord(menu)
-        if tarjeta.clave == "juegos":
-            sub = self.submenu(menu, "Juego")
-            for clave, nombre in juegos.JUEGOS:
-                self.item(sub, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
-            self.item(menu, "Nueva partida", self.juego_vista.nueva)
-            menu.append(Gtk.SeparatorMenuItem())
-        if tarjeta.clave == "apps":
-            self.menu_apps(menu)
-        if tarjeta.clave == "immich":
-            self.item(menu, "Abrir Immich", self.abrir_immich)
-            self.item(menu, "Conectar con Immich…", self.conectar_immich)
-            menu.append(Gtk.SeparatorMenuItem())
-        if tarjeta.clave == "docker":
-            self.menu_docker(menu)
-        if tarjeta.clave == "velocidad":
-            sub = self.submenu(menu, "Estilo del velocímetro")
-            for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-                self.item(sub, nombre, lambda c=clave: self.cambiar_velocimetro(c), self.vel_reloj.estilo == clave)
-            menu.append(Gtk.SeparatorMenuItem())
+        packs.llamar([p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())], "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
             self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
             self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
@@ -4867,9 +3720,8 @@ class Monitor:
                 poner_texto(lb, f"{mount}  {fmt_bytes(used)} / {fmt_bytes(total)} · {pct:.0f} %")
                 barra.set(pct)
 
-        # Sensores
         self.ultimo = s
-        self.pintar_sensores(s)
+        packs.llamar(self.packs, "aplicar", self, s)
         self.ajustar_alturas()
         return False
 
@@ -5099,275 +3951,6 @@ class Monitor:
         poner_texto(t["ciudad"], lugar + (_(" · sin conexión") if self.tiempo.error and d else ""))
         self.ajustar_alturas()
         return True
-
-    # --- Discord ----------------------------------------------------------------
-
-    def _volumen_discord(self, slider, fn):
-        v = round(slider.get_value())
-        slider._valor.set_text(f"{v} %")
-        if getattr(slider, "_actualizando", False):
-            return
-        slider._tocado = time.monotonic()
-        slider._pendiente = v
-        if not getattr(slider, "_enviar", None):
-            def mandar():
-                slider._enviar = None
-                fn(slider._pendiente)
-                return False
-            slider._enviar = GLib.timeout_add(150, mandar)
-
-    def conectar_discord(self):
-        # La aplicación de serie solo sirve si este MoonDeck trae su secreto (versión para amigos).
-        propio = self.discord.cfg.get("client_id")
-        dlg = DialogoDiscord(propio or (CLIENT_ID_POR_DEFECTO if CLIENT_SECRET_POR_DEFECTO else ""))
-        if dlg.run() == Gtk.ResponseType.OK:
-            ident, secreto = dlg.id.get_text().strip(), dlg.secreto.get_text().strip()
-            if secreto or (CLIENT_SECRET_POR_DEFECTO and ident in ("", CLIENT_ID_POR_DEFECTO)):
-                self.discord.configurar(ident or CLIENT_ID_POR_DEFECTO, secreto)
-        dlg.destroy()
-
-    def menu_discord(self, menu):
-        recientes = self.config.get("discord_recientes", [])
-        if recientes and self.discord.estado == "conectado":
-            sub = self.submenu(menu, "Entrar en un canal reciente")
-            for r in recientes:
-                self.item(sub, f"{r['nombre']} · {r['servidor']}" if r["servidor"] else r["nombre"],
-                          lambda i=r["id"]: self.discord.entrar(i))
-        self.item(menu, _("Conectar con Discord…") if self.discord.estado == "sin_config"
-                  else "Cambiar Client ID / Secret…", self.conectar_discord)
-        if self.discord.estado != "sin_config":
-            self.item(menu, "Desconectar de Discord (olvidar la autorización)", self.discord.olvidar)
-        menu.append(Gtk.SeparatorMenuItem())
-
-    def recordar_canal(self, canal):
-        recientes = [r for r in self.config.get("discord_recientes", []) if r["id"] != canal["id"]]
-        recientes.insert(0, {"id": canal["id"], "nombre": canal["nombre"], "servidor": canal["servidor"],
-                             "guild_id": canal.get("guild_id")})
-        if recientes[:8] != self.config.get("discord_recientes"):
-            self.config["discord_recientes"] = recientes[:8]
-            self.guardar_config()
-
-    def vigilar_discord(self):
-        self.discord.vigilar(self.config["discord"]["servidores"])
-
-    def cambiar_discord(self, **cambios):
-        self.config["discord"].update(cambios)
-        self.guardar_config()
-        self.vigilar_discord()
-        self.dc["version"] = None
-
-    def abrir_discord(self):
-        self.discord_no_instalado = not abrir_discord()
-        if not self.discord_no_instalado:
-            self.discord_abriendo = time.monotonic()
-            self.discord._despertar.set()
-        self.dc["version"] = None
-
-    def entrar_ultimo_discord(self):
-        recientes = self.config.get("discord_recientes", [])
-        if recientes:
-            self.discord.entrar(recientes[0]["id"])
-
-    def al_conectar_discord(self, s):
-        """Tras abrir Discord desde el widget: entra en el último canal o donde haya gente."""
-        if not self.discord_abriendo or time.monotonic() - self.discord_abriendo > 120:
-            self.discord_abriendo = 0
-            return
-        if s["estado"] != "conectado" or (s["canales_voz"] is None and self.config["discord"]["servidores"]):
-            return  # aún arrancando o sin haber mirado los canales
-        self.discord_abriendo = 0
-        accion = self.config["discord"]["al_abrir"]
-        if s["canal"]:
-            return
-        if accion == "ultimo":
-            self.entrar_ultimo_discord()
-        elif accion == "gente":
-            canales = [c for c in s["canales_voz"] or [] if c["personas"]]
-            if canales:
-                self.discord.entrar(max(canales, key=lambda c: len(c["personas"]))["id"])
-
-    def boton_canal_discord(self, c, con_servidor):
-        b = Gtk.Button()
-        b.get_style_context().add_class("normal")
-        b.set_can_focus(False)
-        textos = caja(True, 0)
-        nombre = etiqueta(f"🔊 {c['nombre']}" + (f" · {len(c['personas'])}" if c["personas"] else ""), "sub")
-        nombre.get_style_context().add_class("negrita")
-        textos.pack_start(nombre, False, False, 0)
-        if c["personas"]:
-            textos.pack_start(etiqueta(", ".join(c["personas"]), "dim"), False, False, 0)
-        if con_servidor and c["servidor"]:
-            textos.pack_start(etiqueta(c["servidor"], "dim"), False, False, 0)
-        b.add(textos)
-        b.connect("clicked", lambda _b, i=c["id"]: self.discord.entrar(i))
-        b.show_all()
-        return b
-
-    def actualizar_discord(self):
-        d = self.dc
-        s = self.discord.instantanea()
-        if s["version"] == d["version"]:
-            return True
-        d["version"] = s["version"]
-        estado, canal = s["estado"], s["canal"]
-        textos = {
-            "sin_config": _("Conecta el widget con tu cuenta para ver y controlar tu canal de voz."),
-            "desconectado": _("Discord no está abierto."),
-            "conectando": _("Conectando con Discord…"),
-            "autorizando": _("Mira Discord: te está pidiendo que autorices el widget."),
-        }
-        aviso = s["error"] if estado == "error" else textos.get(estado, "")
-        if estado == "desconectado" and self.discord_abriendo:
-            aviso = _("Abriendo Discord…")
-        elif estado == "desconectado" and self.discord_no_instalado:
-            aviso = _("No encuentro Discord instalado.")
-        elif estado == "conectado" and not canal:
-            aviso = (_("Elige tu servidor de Discord en Configuración > Widgets.")
-                     if not self.config["discord"]["servidores"] else
-                     _("Buscando canales…") if s["canales_voz"] is None else
-                     _("Nadie en voz ahora mismo.") if not any(c["personas"] for c in s["canales_voz"]) else "")
-        elif estado == "conectado" and s["error"]:
-            aviso = s["error"]
-        self.al_conectar_discord(s)
-        poner_texto(d["aviso"], aviso)
-        d["aviso"].set_visible(bool(aviso))
-        d["conectar"].set_visible(estado in ("sin_config", "error"))
-        d["abrir"].set_visible(estado == "desconectado")
-        d["abrir"].set_sensitive(not self.discord_abriendo)
-        en_canal = estado == "conectado" and bool(canal)
-
-        # Sin canal: los canales con gente para entrar con un clic, o el último en el que estuve.
-        canales = (s["canales_voz"] or []) if estado == "conectado" and not canal else []
-        ids = [(c["id"], tuple(c["personas"])) for c in canales]
-        if ids != d["canales_ids"]:
-            d["canales_ids"] = ids
-            for b in d["canales"].get_children():
-                b.destroy()
-            varios = len({c["guild_id"] for c in canales}) > 1
-            botones = [self.boton_canal_discord(c, varios) for c in canales]
-            for b in botones:
-                d["canales"].pack_start(b, False, False, 0)
-            # Si no caben, se quitan antes los vacíos (los últimos primero) y luego los demás.
-            vacios = [b for b, c in zip(botones, canales) if not c["personas"]]
-            llenos = [b for b, c in zip(botones, canales) if c["personas"]]
-            d["tarjeta"].prescindibles_grupo("canales", vacios[::-1] + llenos[::-1], 1)
-        d["canales"].set_visible(bool(canales))
-        recientes = self.config.get("discord_recientes", [])
-        ultimo = (estado == "conectado" and not canal and not self.config["discord"]["servidores"]
-                  and bool(recientes))
-        if ultimo:
-            d["ultimo"].set_label(_("Entrar en {canal}").format(canal=recientes[0]["nombre"]))
-        d["ultimo"].set_visible(ultimo)
-        poner_texto(d["canal"], f"🔊 {canal['nombre']}" if en_canal else _("Sin canal de voz"))
-        poner_texto(d["servidor"], canal["servidor"] if en_canal else "")
-        d["servidor"].set_visible(en_canal and bool(canal["servidor"]))
-        d["controles"].set_visible(estado == "conectado")
-        d["salir"].set_sensitive(en_canal)
-        if en_canal and canal["servidor"]:
-            self.recordar_canal(canal)
-
-        # Personas: las filas se rehacen solo si entra o sale alguien.
-        miembros = s["miembros"] if en_canal else []
-        ids = [m["id"] for m in miembros]
-        if ids != d["ids"]:
-            d["ids"] = ids
-            for f in d["filas"].values():
-                f.destroy()
-            d["filas"] = {}
-            for m in miembros:
-                f = FilaDiscord(self.discord, m["id"], m["id"] == s["yo"])
-                d["lista"].pack_start(f, False, False, 0)
-                d["filas"][m["id"]] = f
-            # Si no caben todos, se quitan los últimos de la lista.
-            d["tarjeta"].prescindibles_grupo("miembros", list(d["filas"].values())[::-1], 1)
-        for m in miembros:
-            d["filas"][m["id"]].actualizar(m, m["id"] in s["hablando"], self.discord.avatares.get(m["avatar"]))
-        d["lista"].set_visible(bool(miembros))
-
-        a = s["ajustes"]
-        clases(d["mute"], marcado=bool(a.get("mute")))
-        d["mute"].set_label(_("Micro silenciado") if a.get("mute") else _("Silenciar"))
-        clases(d["deaf"], marcado=bool(a.get("deaf")))
-        d["deaf"].set_label(_("Ensordecido") if a.get("deaf") else _("Ensordecer"))
-        for clave in ("entrada", "salida"):
-            sl, val = d[clave]
-            v = a.get(clave)
-            if v is not None and time.monotonic() - sl._tocado > 1.5 and not getattr(sl, "_enviar", None):
-                sl._actualizando = True
-                sl.set_value(v)
-                sl._actualizando = False
-            val.set_text(f"{round(sl.get_value())} %")
-        self.ajustar_alturas()
-        return True
-
-    # --- test de velocidad -----------------------------------------------------
-
-    @staticmethod
-    def fmt_mbps(v):
-        return f"{v:.0f} Mbps" if v >= 100 else f"{v:.1f} Mbps"
-
-    def iniciar_test(self):
-        self.test.iniciar()
-        if not self.t_velocidad:
-            self.t_velocidad = GLib.timeout_add(250, self.actualizar_velocidad)
-        self.actualizar_velocidad()
-
-    def actualizar_velocidad(self):
-        t = self.test
-        r = t.resultado
-        if t.midiendo:
-            p = t.parcial
-            fase = {"ping": _("Midiendo ping…"), "bajada": _("Midiendo bajada…"),
-                    "subida": _("Midiendo subida…")}.get(t.fase, _("Preparando…"))
-            poner_texto(self.vel_estado, fase)
-            # La escala crece si hace falta (como el cambio de rango de un velocímetro), nunca encoge.
-            self._vel_tope = max(getattr(self, "_vel_tope", 0) or 0,
-                                 velocimetro.tope(t.actual if t.fase in ("bajada", "subida") else 0,
-                                                  p.get("bajada")))
-            if t.fase == "ping" or not t.fase:
-                self.vel_reloj.poner(0, self._vel_tope, "…", _("PING"), "amarillo", t.progreso, "ms")
-            else:
-                self.vel_reloj.poner(t.actual or 0, self._vel_tope, self.fmt_cifra(t.actual),
-                                     (_("Bajada") if t.fase == "bajada" else _("Subida")).upper(),
-                                     "azul" if t.fase == "bajada" else "morado", t.progreso)
-            partes = [f"↓ {self.fmt_mbps(p['bajada'])}" if "bajada" in p else None,
-                      f"ping {p['ping']:.0f} ms" if "ping" in p else None]
-            poner_texto(self.vel_resto, " · ".join(x for x in partes if x) or " ")
-            self.vel_boton.set_sensitive(False)
-            self.vel_boton.set_label(_("Midiendo…"))
-            return True
-        self.t_velocidad = None
-        self._vel_tope = 0
-        self.vel_boton.set_sensitive(True)
-        self.vel_boton.set_label(_("Repetir test") if r else _("Iniciar test"))
-        if r and r is not self.config.get("velocidad"):
-            self.config["velocidad"] = r
-            self.guardar_config()
-        if r:
-            self.vel_reloj.poner(r["bajada"], velocimetro.tope(r["bajada"]), self.fmt_cifra(r["bajada"]),
-                                 _("Bajada").upper())
-            poner_texto(self.vel_resto, f"↑ {self.fmt_mbps(r['subida'])} · ping {r['ping']:.0f} ms")
-        else:
-            self.vel_reloj.poner(0, 100, "—", _("Bajada").upper())
-            poner_texto(self.vel_resto, _("↑ — · ping —"))
-        if t.error:
-            poner_texto(self.vel_estado, t.error)
-        else:
-            poner_texto(self.vel_estado, _("Último test: {fecha} · servidores de Cloudflare").format(fecha=r["fecha"]) if r else
-                        _("Mide ping, bajada y subida (unos 15 s)."))
-        return False
-
-    def cambiar_velocimetro(self, estilo):
-        self.config["velocimetro"] = estilo
-        self.vel_reloj.estilo = estilo
-        self.vel_reloj.queue_draw()
-        self.guardar_config()
-
-    @staticmethod
-    def fmt_cifra(v):
-        if not v:
-            return "0"
-        return f"{v:.0f}" if v >= 100 else f"{v:.1f}"
 
     # --- multimedia ---------------------------------------------------------
 

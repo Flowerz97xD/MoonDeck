@@ -51,6 +51,7 @@ class Actualizador:
         self.error = None
         self._url = None
         self._hilo = None
+        self.omitir = set()     # archivos que no se copian (los de los packs borrados)
 
     # --- datos para la interfaz ------------------------------------------------
 
@@ -143,7 +144,7 @@ class Actualizador:
                 z.extractall(extraido)
             origen = self._carpeta_de_la_app(extraido)
             nuevos = [n for n in os.listdir(origen)
-                      if os.path.isfile(os.path.join(origen, n)) and n.endswith(EXTENSIONES)]
+                      if os.path.isfile(os.path.join(origen, n)) and n.endswith(EXTENSIONES) and n not in self.omitir]
             # En Windows, el LEEME y el README van fuera de app\, junto a instalar.bat.
             leemes = [os.path.join(os.path.dirname(origen), n) for n in ("LEEME.txt", "README.txt")]
             requisitos_antes = self._leer(os.path.join(self.carpeta, "requirements.txt"))

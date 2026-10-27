@@ -43,6 +43,8 @@ Descarga el zip de tu sistema en [Releases](https://github.com/blkshhh/MoonDeck/
 
 Para actualizar: Configuración > General > "Buscar actualizaciones".
 
+Los widgets van por packs: el **Básico** está siempre; **Hardware**, **Discord**, **Escritorio**, **Ocio** y **Servidor** se pueden borrar en Configuración > Packs y volver a descargar cuando quieras.
+
 ## Estructura
 
 | Carpeta | Qué hay |
@@ -52,6 +54,8 @@ Para actualizar: Configuración > General > "Buscar actualizaciones".
 | `windows/` | Versión de Windows: PySide6 (Qt), cristal acrílico, LibreHardwareMonitor, PresentMon (FPS) y pycaw/WinRT para el audio |
 | `secretos/` | **No se sube a Git.** `discord_client_secret.txt` con el Client Secret de la aplicación de Discord |
 | `dist/` | **No se sube a Git.** Los zips que genera `construir.sh` |
+
+Cada pack de widgets está en su `pack_<id>.py` (uno en `linux/` y otro en `windows/`); `comun/packs.py` los enumera, los carga y los borra/descarga.
 
 ## Generar los zips para repartir
 
