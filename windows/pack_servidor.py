@@ -124,11 +124,6 @@ class Metodos:
             menu.addSeparator()
 
     def actualizar_extras(self):
-        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
-            for v in self.ventanas():
-                v.setVisible(True)
-                v.raise_()
-                v.activateWindow()
         self.actualizar_immich()
         self.actualizar_docker()
 
@@ -160,14 +155,14 @@ class Metodos:
                 usado=tam_legible(disco["usado"]), total=tam_legible(disco["total"])), M.ANCHO - 32)
             im["barra"].set(disco["pct"])
         for clave in ("disco", "barra"):
-            im[clave].setVisible(bool(disco))
+            poner_visible(im[clave], bool(disco))
         for clave, texto in (("fotos", "{n} fotos · {tam}"), ("videos", "{n} vídeos · {tam}")):
             n, uso = d.get(clave) if ok else None, d.get(f"uso_{clave}") if ok else None
             if n is not None:
                 cifra = f"{n:,}".replace(",", ".")
                 recortar(im[clave], _(texto).format(n=cifra, tam=tam_legible(uso)) if uso is not None
                          else _(texto.split(" · ")[0]).format(n=cifra), M.ANCHO - 32)
-            im[clave].setVisible(n is not None)
+            poner_visible(im[clave], n is not None)
         usuarios = d.get("usuarios", []) if ok else []
         if [u["nombre"] for u in usuarios] != im["usuarios"]:
             im["usuarios"] = [u["nombre"] for u in usuarios]
@@ -177,15 +172,15 @@ class Metodos:
                 im["caja_usuarios"].addWidget(etiqueta("", "dim"))
         for i, u in enumerate(usuarios):
             im["caja_usuarios"].itemAt(i).widget().setText(f"{u['nombre']}: {tam_legible(u['uso'])}")
-        im["lista_usuarios"].setVisible(len(usuarios) > 1)  # con un solo usuario no aporta nada
+        poner_visible(im["lista_usuarios"], len(usuarios) > 1)  # con un solo usuario no aporta nada
         tareas = d.get("tareas") if ok else None
         if tareas is not None:
             lineas = [(_("{nombre}: {n} en marcha, {m} en espera") if activas else _("{nombre}: {m} en espera"))
                       .format(nombre=_(nombre), n=activas, m=esperando) for nombre, activas, esperando in tareas[:4]]
             im["tareas"].setText("\n".join(lineas) or _("Sin tareas pendientes"))
-        im["tareas"].setVisible(tareas is not None)
+        poner_visible(im["tareas"], tareas is not None)
         im["pie"].setText(_("Immich {version} · en línea").format(version=d.get("version", "")) if ok else "")
-        im["pie"].setVisible(ok)
+        poner_visible(im["pie"], ok)
         self.ajustar_alturas()
 
     def actualizar_docker(self):

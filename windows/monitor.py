@@ -305,6 +305,16 @@ def etiqueta(texto="", estilo="sub"):
 # Widgets de dibujo
 # ---------------------------------------------------------------------------
 
+def poner_visible(w, ver):
+    """Muestra u oculta, pero sin volver a enseñar lo que la tarjeta quitó por falta de sitio:
+    se vería un instante antes de que lo quite otra vez (parpadeo). Ya lo devuelve ella si cabe."""
+    if getattr(w, "_quitado", False):
+        if ver:
+            return
+        w._quitado = False
+    w.setVisible(ver)
+
+
 class Grafica(QWidget):
     """Gráfica de líneas con historial; escala fija (0-100) o automática."""
 
@@ -3156,6 +3166,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.t_reloj = QTimer(interval=1000)
         self.t_reloj.timeout.connect(self.actualizar_reloj)
         self.t_reloj.start()
+        self.t_aperturas = QTimer(interval=1000)
+        self.t_aperturas.timeout.connect(self.mirar_aperturas)
+        self.t_aperturas.start()
         if self.audio:
             self.t_audio = QTimer(interval=2000)
             self.t_audio.timeout.connect(self.actualizar_audio)
@@ -3785,6 +3798,13 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         packs.llamar(self.packs, "aplicar", self, s)
 
         self.ajustar_alturas()
+
+    def mirar_aperturas(self):
+        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
+            for v in self.ventanas():
+                v.setVisible(True)
+                v.raise_()
+                v.activateWindow()
 
     # --- reloj y calendario ----------------------------------------------------
 

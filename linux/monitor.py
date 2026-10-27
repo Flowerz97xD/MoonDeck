@@ -223,6 +223,16 @@ def poner_texto(label, texto):
     if label.get_text() != texto:
         label.set_text(texto)
 
+def poner_visible(w, ver):
+    """Muestra u oculta, pero sin volver a enseñar lo que la tarjeta quitó por falta de sitio:
+    se vería un instante antes de que lo quite otra vez (parpadeo). Ya lo devuelve ella si cabe."""
+    if getattr(w, "_quitado", False):
+        if ver:
+            return
+        w._quitado = False
+    w.set_visible(ver)
+
+
 
 def poner_marcado(label, marcado):
     if getattr(label, "_marcado", None) != marcado:
@@ -3041,6 +3051,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
         GLib.timeout_add(1000, self.actualizar_multimedia)
         GLib.timeout_add(1000, self.actualizar_reloj)
+        GLib.timeout_add(1000, self.mirar_aperturas)
+        # Un fondo animado que arranca después (linux-wallpaperengine va a la misma capa) la taparía.
+        GLib.timeout_add_seconds(10, lambda: self.traer_delante() and False)
         GLib.timeout_add(2000, self.actualizar_audio)
         GLib.timeout_add(1000, self.actualizar_tiempo)
         GLib.timeout_add(40, self.parpadear)
@@ -3647,6 +3660,19 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def ventanas(self):
         return [t.ventana for t in self.tarjetas if t.ventana] + ([self.panel] if self.panel else [])
+
+    def traer_delante(self):
+        """Vuelve a abrir las ventanas: el compositor las pone encima de lo que haya en su capa."""
+        for v in self.ventanas():
+            if v.get_visible():
+                v.hide()
+            v.show()
+            v.present()
+
+    def mirar_aperturas(self):
+        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
+            self.traer_delante()
+        return True
 
     def alternar(self):
         ventanas = self.ventanas()

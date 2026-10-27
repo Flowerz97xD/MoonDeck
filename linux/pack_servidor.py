@@ -122,10 +122,6 @@ class Metodos:
             menu.append(Gtk.SeparatorMenuItem())
 
     def actualizar_extras(self):
-        if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
-            for v in self.ventanas():
-                v.set_visible(True)
-                v.present()
         self.actualizar_immich()
         self.actualizar_docker()
         return True
@@ -160,14 +156,14 @@ class Metodos:
                 usado=tam_legible(disco["usado"]), total=tam_legible(disco["total"])))
             im["barra"].set(disco["pct"])
         for clave in ("disco", "barra"):
-            im[clave].set_visible(bool(disco))
+            poner_visible(im[clave], bool(disco))
         for clave, texto in (("fotos", "{n} fotos · {tam}"), ("videos", "{n} vídeos · {tam}")):
             n, uso = d.get(clave) if ok else None, d.get(f"uso_{clave}") if ok else None
             if n is not None:
                 cifra = f"{n:,}".replace(",", ".")
                 poner_texto(im[clave], _(texto).format(n=cifra, tam=tam_legible(uso)) if uso is not None
                             else _(texto.split(" · ")[0]).format(n=cifra))
-            im[clave].set_visible(n is not None)
+            poner_visible(im[clave], n is not None)
         usuarios = d.get("usuarios", []) if ok else []
         if [u["nombre"] for u in usuarios] != im["usuarios"]:
             im["usuarios"] = [u["nombre"] for u in usuarios]
@@ -178,15 +174,15 @@ class Metodos:
             im["lista_usuarios"].show_all()
         for lb, u in zip(im["lista_usuarios"].get_children(), usuarios):
             poner_texto(lb, f"{u['nombre']}: {tam_legible(u['uso'])}")
-        im["lista_usuarios"].set_visible(len(usuarios) > 1)  # con un solo usuario no aporta nada
+        poner_visible(im["lista_usuarios"], len(usuarios) > 1)  # con un solo usuario no aporta nada
         tareas = d.get("tareas") if ok else None
         if tareas is not None:
             lineas = [(_("{nombre}: {n} en marcha, {m} en espera") if activas else _("{nombre}: {m} en espera"))
                       .format(nombre=_(nombre), n=activas, m=esperando) for nombre, activas, esperando in tareas[:4]]
             poner_texto(im["tareas"], "\n".join(lineas) or _("Sin tareas pendientes"))
-        im["tareas"].set_visible(tareas is not None)
+        poner_visible(im["tareas"], tareas is not None)
         poner_texto(im["pie"], _("Immich {version} · en línea").format(version=d.get("version", "")) if ok else "")
-        im["pie"].set_visible(ok)
+        poner_visible(im["pie"], ok)
         self.ajustar_alturas()
 
     def actualizar_docker(self):
