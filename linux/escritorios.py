@@ -29,17 +29,23 @@ def _cadena(datos, i):
 
 
 def vista_general():
-    """Abre la vista con todos los escritorios (la de COSMIC; en KDE, su "Vista general")."""
-    for orden in (["cosmic-workspaces"],
-                  ["qdbus", "org.kde.kglobalaccel", "/component/kwin", "invokeShortcut", "Overview"]):
-        if shutil.which(orden[0]):
-            try:
-                subprocess.Popen(orden, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
-                return True
-            except OSError:
-                continue
-    return False
+    """Abre la vista con todos los escritorios: la de COSMIC o la "Vista general" de KDE."""
+    escritorio = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    if "KDE" in escritorio:
+        orden = ["qdbus", "org.kde.kglobalaccel", "/component/kwin", "invokeShortcut", "Overview"]
+    else:
+        # En COSMIC, cosmic-workspaces ya está en marcha: se le pide por D-Bus que se muestre
+        # (ejecutarlo otra vez no hace nada).
+        orden = ["gdbus", "call", "--session", "--dest", "com.system76.CosmicWorkspaces", "--object-path",
+                 "/com/system76/CosmicWorkspaces", "--method", "com.system76.CosmicWorkspaces.Show"]
+    if not shutil.which(orden[0]):
+        return False
+    try:
+        subprocess.Popen(orden, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    except OSError:
+        return False
 
 
 class Escritorios:

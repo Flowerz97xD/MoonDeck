@@ -203,6 +203,19 @@ similares) para pasar al escritorio siguiente o al anterior. Ctrl + rueda
 abajo muestra todos los escritorios. Se desactiva en Configuracion > General.
 
 
+IMMICH Y DOCKER
+---------------
+Dos widgets para administrar el servidor (llegan ocultos: activalos en menu >
+"Widgets visibles").
+  Immich ........... espacio del disco, lo que ocupan fotos y videos (y cada
+                     usuario) y las tareas en cola. Clic derecho > "Conectar con
+                     Immich..." y pega una clave de API de administrador (en
+                     Immich: Ajustes de la cuenta > Claves de API).
+  Docker ........... los contenedores con su estado (punto verde, amarillo o
+                     rojo), tiempo encendido, CPU y RAM. Clic derecho en uno para
+                     pararlo, iniciarlo o reiniciarlo.
+
+
 APLICACIONES
 ------------
 Un lanzador con los iconos de las apps que elijas (llega oculto: activalo en

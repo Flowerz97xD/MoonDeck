@@ -6,7 +6,7 @@
 
 Widgets de cristal para el escritorio, para **Linux (Pop!_OS / COSMIC)** y **Windows 10/11**.
 
-Muestran en tiempo real CPU, memoria, GPUs, red, discos, sensores (temperaturas, ventiladores, voltajes…), FPS (solo en Windows), música y volumen por app, reloj, calendario, el tiempo, el canal de voz de Discord (y los canales de tu servidor, para entrar con un clic), los dispositivos de audio, un test de velocidad, un lanzador de aplicaciones y tres minijuegos (Buscaminas, 2048 y el dinosaurio de Chrome).
+Muestran en tiempo real CPU, memoria, GPUs, red, discos, sensores (temperaturas, ventiladores, voltajes…), FPS (solo en Windows), música y volumen por app, reloj, calendario, el tiempo, el canal de voz de Discord (y los canales de tu servidor, para entrar con un clic), los dispositivos de audio, un test de velocidad, un lanzador de aplicaciones, widgets para administrar Immich y Docker y tres minijuegos (Buscaminas, 2048 y el dinosaurio de Chrome).
 
 Hay dos modos:
 - **Widgets:** tarjetas sueltas por el escritorio.

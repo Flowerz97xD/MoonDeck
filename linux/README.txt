@@ -197,6 +197,19 @@ to the next or previous desktop. Ctrl + scroll down shows all desktops. Turn it
 off in Settings > General.
 
 
+IMMICH AND DOCKER
+-----------------
+Two widgets to manage your server (they start hidden: turn them on in menu >
+"Visible widgets").
+  Immich ........... disk space, how much photos and videos take (and each
+                     user) and the queued jobs. Right-click > "Connect to
+                     Immich..." and paste an admin API key (in Immich: Account
+                     Settings > API Keys).
+  Docker ........... the containers with their state (green, yellow or red
+                     dot), uptime, CPU and RAM. Right-click one to stop, start
+                     or restart it.
+
+
 APPS
 ----
 A launcher with the icons of the apps you choose (it starts hidden: turn it on
