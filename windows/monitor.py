@@ -79,8 +79,9 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
 
 try:
     from PySide6.QtCore import QEvent, QFileInfo, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
-    from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF, QGuiApplication,
-                               QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF)
+    from PySide6.QtGui import (QBrush, QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF,
+                               QGuiApplication, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
+                               QPolygonF)
     from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDoubleSpinBox,
                                    QFileDialog, QFileIconProvider, QFontComboBox, QFrame, QGraphicsOpacityEffect, QGridLayout,
                                    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu,
@@ -436,9 +437,9 @@ def leyenda(*items):
 # Iconos de Windows 11 (Segoe Fluent Icons) o de Windows 10 (Segoe MDL2 Assets);
 # en otros sistemas, símbolos Unicode.
 ICONOS = {"anterior": "\uE892", "play": "\uE768", "pausa": "\uE769", "siguiente": "\uE893",
-          "volumen": "\uE767", "silencio": "\uE74F"}
+          "volumen": "\uE767", "silencio": "\uE74F", "micro": "\uE720", "micro_off": "\uEC54"}
 ICONOS_UNICODE = {"anterior": "⏮", "play": "▶", "pausa": "⏸", "siguiente": "⏭",
-                  "volumen": "🔊", "silencio": "🔇"}
+                  "volumen": "🔊", "silencio": "🔇", "micro": "🎙", "micro_off": "🚫"}
 _fuente_iconos = None
 
 
@@ -785,9 +786,11 @@ class FilaReproductor(QWidget):
 
 class ListaDesplazable(QScrollArea):
     """Una lista que se desplaza con la rueda si no cabe. Pide el alto de su contenido
-    (para que la tarjeta mida lo justo) pero se conforma con `minimo`."""
+    (para que la tarjeta mida lo justo) pero se conforma con `minimo`. Sin barra: el
+    contenido se funde arriba o abajo cuando queda más por ese lado."""
 
     ESTIRA = True  # se queda con el alto que sobre en la tarjeta
+    FUNDIDO = 22   # píxeles del degradado
 
     def __init__(self, contenido, minimo=30):
         super().__init__()
@@ -796,14 +799,32 @@ class ListaDesplazable(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # la rueda sigue desplazando
         self.viewport().setAutoFillBackground(False)
         contenido.setAutoFillBackground(False)
-        self.setStyleSheet(
-            "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"
-            "QScrollBar:vertical { width: 6px; background: transparent; margin: 0; }"
-            "QScrollBar::handle:vertical { background: rgba(255, 255, 255, 70); border-radius: 3px; min-height: 20px; }"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }")
+        self.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        self._fundido = QGraphicsOpacityEffect(self)
+        self._fundido.setEnabled(False)
+        self.setGraphicsEffect(self._fundido)
+        self.verticalScrollBar().valueChanged.connect(self._difuminar)
+        self.verticalScrollBar().rangeChanged.connect(self._difuminar)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._difuminar()
+
+    def _difuminar(self, *_x):
+        sb = self.verticalScrollBar()
+        arriba, abajo = sb.value() > 0, sb.value() < sb.maximum()
+        self._fundido.setEnabled(arriba or abajo)
+        if not (arriba or abajo):
+            return
+        h = max(1, self.height())
+        f = min(0.45, self.FUNDIDO / h)
+        mascara = QLinearGradient(0, 0, 0, h)
+        for pos, alfa in ((0, 0 if arriba else 255), (f, 255), (1 - f, 255), (1, 0 if abajo else 255)):
+            mascara.setColorAt(pos, QColor(0, 0, 0, alfa))
+        self._fundido.setOpacityMask(QBrush(mascara))
 
     def sizeHint(self):
         return QSize(super().sizeHint().width(), self.widget().sizeHint().height())
@@ -3227,14 +3248,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             m["caja_vol"].setContentsMargins(0, 0, 0, 0)
             m["caja_vol"].setSpacing(4)
             m["caja_vol"].addStretch()
-            # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas);
-            # entonces sale arriba a la derecha un botón para silenciar el volumen general.
+            # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas).
             m["scroll_vol"] = c.add(ListaDesplazable(m["volumen"]))
-            m["silenciar"] = c.poner_esquina(boton_icono("volumen", 10))
-            m["silenciar"].setToolTip(_("Silenciar"))
-            m["silenciar"].clicked.connect(lambda: m["filas_vol"] and (m["filas_vol"][0]._mute(),
-                                                                       self.esquina_multimedia()))
-            m["scroll_vol"].verticalScrollBar().rangeChanged.connect(lambda *_x: self.esquina_multimedia())
             m["aviso"] = c.add(etiqueta("", "dim"))
             m["aviso"].setWordWrap(True)
             m["tarjeta"] = c
@@ -3332,11 +3347,10 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a[clave] = caja
                 c.add(contenedor)
             a["entrada_tit"].setContentsMargins(0, 6, 0, 0)
-            a["mic"] = QPushButton(_("Silenciar micrófono"))
-            a["mic"].setCheckable(True)
-            a["mic"].setCursor(Qt.PointingHandCursor)
-            a["mic"].clicked.connect(self.silenciar_mic)
-            c.add(a["mic"], prescindible=1)
+            # Silenciar el micro: arriba a la derecha, siempre a mano (antes era lo primero que se
+            # quitaba). Pide lo contrario de lo que hay de verdad, no lo que diga el botón.
+            a["mic"] = c.poner_esquina(boton_icono("micro", 10))
+            a["mic"].clicked.connect(lambda: self.silenciar_mic(not a.get("mic_estado")))
             a["aviso"] = c.add(etiqueta("", "dim"))
             a["aviso"].setWordWrap(True)
             self.audio = a
@@ -3880,9 +3894,11 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a[k + "_boton"].setVisible(len(datos[k]) > 1)
                 a[k + "_boton"].setText(_("Cerrar ▴") if a[k + "_abierto"] else _("Cambiar ▾"))
             mic = datos["mic_silenciado"]
-            a["mic"].setEnabled(mic is not None)
-            a["mic"].setChecked(bool(mic))
-            a["mic"].setText(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
+            a["mic_estado"] = bool(mic)
+            a["mic"].setVisible(mic is not None)
+            poner_icono(a["mic"], "micro_off" if mic else "micro", 10)
+            a["mic"].setStyleSheet(f"color: {COLORES['rojo'].name()};" if mic else "")
+            a["mic"].setToolTip(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
         a["aviso"].setText(self.dispositivos.error or "")
         a["aviso"].setVisible(bool(self.dispositivos.error))
         self.ajustar_alturas()
@@ -4153,16 +4169,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         errores = [e for e in (self.reproductores.error, self.mezclador.error) if e]
         m["aviso"].setText("\n".join(errores))
         m["aviso"].setVisible(bool(errores))
-        self.esquina_multimedia()
         self.ajustar_alturas()
-
-    def esquina_multimedia(self):
-        """El botón de silenciar de la esquina: solo si la lista del volumen no se ve entera."""
-        m = self.multimedia
-        general = m["filas_vol"][0] if m["filas_vol"] and m["scroll_vol"].isVisibleTo(m["tarjeta"]) else None
-        m["silenciar"].setVisible(bool(general) and m["scroll_vol"].verticalScrollBar().maximum() > 0)
-        if general:
-            poner_icono(m["silenciar"], "silencio" if general.silenciado else "volumen", 10)
 
 
 def main():

@@ -310,7 +310,7 @@ class Dispositivos:
                     mics.setdefault(d.GetId(), d)
                 except Exception:  # noqa: BLE001 - sin micrófono para esa función
                     pass
-            self._mics = [self.AU.CreateDevice(d).EndpointVolume for d in mics.values()]
+            self._mics = [self._volumen(d) for d in mics.values()]
             if self._mics:
                 datos["mic_silenciado"] = all(bool(m.GetMute()) for m in self._mics)
             self.error = None
@@ -318,6 +318,17 @@ class Dispositivos:
         except Exception as e:  # noqa: BLE001
             self.error = _("Error leyendo dispositivos: {error}").format(error=e)
             return None
+
+    def _volumen(self, dispositivo):
+        """El control de volumen (y silencio) de un dispositivo. Las versiones de pycaw
+        cambian cómo se saca: primero la cómoda y, si no está, directamente por COM."""
+        try:
+            return self.AU.CreateDevice(dispositivo).EndpointVolume
+        except AttributeError:
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import IAudioEndpointVolume
+            return dispositivo.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(
+                IAudioEndpointVolume)
 
     def predeterminar(self, ident):
         """Lo hace predeterminado para todo (multimedia, sistema y comunicaciones)."""

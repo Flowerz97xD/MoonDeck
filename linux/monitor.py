@@ -421,6 +421,35 @@ class Dibujo(Gtk.DrawingArea):
         return self.altos or Gtk.DrawingArea.do_get_preferred_height(self)
 
 
+def fundido_al_desplazar(scroll, borde=22):
+    """Lista desplazable sin barra: el contenido se funde arriba o abajo cuando queda
+    más por ese lado (se pinta en un grupo y se aplica una máscara degradada)."""
+    scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.EXTERNAL)
+    adj = scroll.get_vadjustment()
+
+    def antes(_w, cr):
+        cr.push_group()
+        return False
+
+    def despues(w, cr):
+        cr.set_source(cr.pop_group())
+        h = w.get_allocated_height()
+        arriba = adj.get_value() > 0.5
+        abajo = adj.get_value() < adj.get_upper() - adj.get_page_size() - 0.5
+        if not (arriba or abajo):
+            cr.paint()
+            return False
+        f = min(0.45, borde / max(1, h))
+        mascara = cairo.LinearGradient(0, 0, 0, h)
+        for pos, alfa in ((0, 0 if arriba else 1), (f, 1), (1 - f, 1), (1, 0 if abajo else 1)):
+            mascara.add_color_stop_rgba(pos, 0, 0, 0, alfa)
+        cr.mask(mascara)
+        return False
+    scroll.connect("draw", antes)
+    scroll.connect_after("draw", despues)
+    adj.connect("value-changed", lambda _a: scroll.queue_draw())
+
+
 def rect_redondeado(cr, x, y, w, h, r):
     r = max(0, min(r, w / 2, h / 2))
     cr.new_sub_path()
@@ -3085,20 +3114,14 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         m["nada"] = c.add_w(etiqueta("No está sonando nada.", "dim"))
         m["seccion_vol"] = c.add_w(etiqueta("VOLUMEN", "seccion"))
         m["seccion_vol"].set_margin_top(8)
-        # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas);
-        # entonces sale arriba a la derecha un botón para silenciar el volumen general.
-        m["scroll_vol"] = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
-                                             vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
+        # El volumen por app se desplaza con la rueda si no cabe (en vez de quitar filas).
+        m["scroll_vol"] = Gtk.ScrolledWindow()
+        fundido_al_desplazar(m["scroll_vol"])
         m["scroll_vol"].set_propagate_natural_height(True)
         m["scroll_vol"].set_min_content_height(30)
         m["scroll_vol"].add(m["volumen"])
         m["scroll_vol"].get_child().set_shadow_type(Gtk.ShadowType.NONE)
         c.add_w(m["scroll_vol"], expand=True)
-        m["silenciar"] = c.poner_esquina(boton_icono("audio-volume-high-symbolic", Gtk.IconSize.MENU))
-        m["silenciar"].set_tooltip_text(_("Silenciar"))
-        m["silenciar"].connect("clicked", lambda _b: m["filas_vol"] and (m["filas_vol"][0]._mute(None),
-                                                                         self.esquina_multimedia()))
-        m["scroll_vol"].get_vadjustment().connect("changed", lambda _a: self.esquina_multimedia())
         m["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         m["tarjeta"] = c
         self.multimedia = m
@@ -3168,7 +3191,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             a[clave + "_abierto"] = False
             a[clave] = c.add_w(caja(True, 2))
         a["entrada_tit"].set_margin_top(4)
-        a["mic"] = c.add_w(boton_texto("Silenciar micrófono"), prescindible=1)
+        # Silenciar el micro: arriba a la derecha, siempre a mano (antes era lo primero que se quitaba).
+        a["mic"] = c.poner_esquina(boton_icono("microphone-sensitivity-high-symbolic", Gtk.IconSize.MENU))
         a["mic"].connect("clicked", lambda _b: self.silenciar_mic(not a.get("mic_estado")))
         a["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
         self.audio = a
@@ -3818,9 +3842,11 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a[k + "_boton"].set_label(_("Cerrar ▴") if a[k + "_abierto"] else _("Cambiar ▾"))
             mic = datos["mic_silenciado"]
             a["mic_estado"] = bool(mic)
-            a["mic"].set_sensitive(mic is not None)
+            a["mic"].set_visible(mic is not None)
             clases(a["mic"], marcado=bool(mic))
-            a["mic"].set_label(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
+            poner_icono(a["mic"], "microphone-sensitivity-muted-symbolic" if mic
+                        else "microphone-sensitivity-high-symbolic", Gtk.IconSize.MENU)
+            a["mic"].set_tooltip_text(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
         error = self.dispositivos.error or ""
         poner_texto(a["aviso"], error)
         a["aviso"].set_visible(bool(error))
@@ -4003,19 +4029,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         errores = [e for e in (self.reproductores.error, self.mezclador.error) if e]
         poner_texto(m["aviso"], "\n".join(errores))
         m["aviso"].set_visible(bool(errores))
-        self.esquina_multimedia()
         self.ajustar_alturas()
         return True
-
-    def esquina_multimedia(self):
-        """El botón de silenciar de la esquina: solo si la lista del volumen no se ve entera."""
-        m = self.multimedia
-        adj = m["scroll_vol"].get_vadjustment()
-        general = m["filas_vol"][0] if m["filas_vol"] and m["scroll_vol"].get_visible() else None
-        m["silenciar"].set_visible(bool(general) and adj.get_upper() > adj.get_page_size() + 1)
-        if general:
-            poner_icono(m["silenciar"], "audio-volume-muted-symbolic" if general.silenciado
-                        else "audio-volume-high-symbolic", Gtk.IconSize.MENU)
 
 
 PROVEEDOR = None  # CSS de la app; se recarga al cambiar el tema
