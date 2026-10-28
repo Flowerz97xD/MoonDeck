@@ -156,7 +156,8 @@ The weather of your city: now (temperature, feels like, humidity, wind,
 sunrise and sunset), the next hours and the next 6 days with the chance of
 rain. Data from Open-Meteo (free, no account); updated every 15 minutes. By
 default, Barbate (Cádiz, Spain), the creator's hometown.
-Right-click > "Change city..." (or Settings > Widgets) to search for yours.
+Right-click > "Change city..." (or Settings > Widget options) to search for
+yours.
 
 
 DISCORD
@@ -185,9 +186,9 @@ It works with the official Discord (also with Vencord) and with Vesktop.
 
 When you're not in voice, the widget shows the voice channels of your server
 (with who is in each one): click one to join. Choose your server in Settings >
-Widgets > "Your Discord server". If Discord is closed, the "Open Discord"
-button opens it minimized and, if you want, joins the last channel or the one
-with most people (Settings > Widgets > Discord).
+Widget options > "Your Discord server". If Discord is closed, the "Open
+Discord" button opens it minimized and, if you want, joins the last channel or
+the one with most people (Settings > Widget options > Discord).
 
 
 VIRTUAL DESKTOPS
@@ -256,23 +257,29 @@ instantly:
                          Dracula, Forest and Minimal. Also: accent color, text
                          colors, font and text size. "Export" / "Import" save
                          or load the theme in a .json file to share it.
-  Widgets .............. the weather city, which day the calendar week starts
-                         on (Monday or Sunday), the clock type and which
-                         widgets show their title.
-  Cards (widgets mode and panel mode, separately): background color and
+  Widget options ....... the weather city, which day the calendar week starts
+                         on (Monday or Sunday), the clock type, "Keep each
+                         app's volume" (if an app like Firefox sets its own
+                         volume when the next song starts, MoonDeck puts back
+                         the one you gave it) and each pack's options
+                         (Discord, speed test, apps...).
+  Titles and backgrounds  remove the title or background of each widget.
+  Style (widgets mode and panel mode, separately): background color and
                          opacity, gradient (two colors and direction), blur
                          on/off, background image with its opacity, border
                          color, opacity and width, rounded corners, "Neon
                          mode" (the border shines like a neon tube) and
                          "Flicker" (the neon fails now and then, like an old
                          tube).
-  Panel background ..... color, opacity and image for the whole screen.
-  Layout ............... save the current panel layout as the one "Reset"
+                         In panel mode, also the background covering the
+                         whole screen: color, opacity and image.
+  Layout and size ...... save the current panel layout as the one "Reset"
                          goes back to (or back to the factory one), and save
                          the current widget positions as the ones "Rearrange
-                         widgets" uses.
-  General .............. language, open at login, widget width, columns when
-                         arranging them and how often they update.
+                         widgets" uses; the widget width and the columns
+                         when arranging them.
+  General .............. language, open at login, the mouse wheel, how often
+                         sensors are read, and updates.
 
 
 TROUBLESHOOTING

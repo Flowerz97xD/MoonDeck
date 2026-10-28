@@ -360,6 +360,7 @@ class Mezclador:
         self.p = _Pulse.compartido()
         self.ok = self.p.ok
         self._indices = {}
+        self.mantener = True  # mantener el volumen que se pone a cada app (Ajustes)
 
     @property
     def error(self):
@@ -379,8 +380,14 @@ class Mezclador:
         if nombre is None:
             self.p.orden("vol-general", ("set-sink-volume", "@DEFAULT_SINK@", pct))
         else:
-            self.p.fijados[nombre] = (round(valor * 100) / 100, time.monotonic())
+            if self.mantener:
+                self.p.fijados[nombre] = (round(valor * 100) / 100, time.monotonic())
             self.p.orden(f"vol-{nombre}", *(("set-sink-input-volume", i, pct) for i in self._indices.get(nombre, [])))
+
+    def mantener_volumen(self, activo):
+        self.mantener = activo
+        if not activo:
+            self.p.fijados.clear()
 
     def silencio(self, nombre, activo):
         v = "1" if activo else "0"

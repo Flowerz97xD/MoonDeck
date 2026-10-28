@@ -2441,9 +2441,17 @@ class VentanaConfig(Gtk.Window):
     """Temas, colores, fuentes, fondos, disposición por defecto y ajustes generales.
     Todo se aplica al momento."""
 
-    PAGINAS = (("tema", "Tema"), ("ajustes", "Widgets"), ("widgets", "Tarjetas · modo widgets"),
-               ("panel", "Tarjetas · modo panel"), ("fondo", "Fondo del panel"), ("disposicion", "Disposición"),
-               ("packs", "Packs"), ("general", "General"))
+    # (clave, título en la barra lateral, una frase arriba de la página)
+    PAGINAS = (("tema", "Tema", "Colores y letra de todo MoonDeck. Los cambios se aplican al momento."),
+               ("ajustes", "Opciones de widgets", "Lo que muestra y hace cada widget. Cuáles se ven se elige "
+                                                  "con el clic derecho › Widgets visibles."),
+               ("titulos", "Títulos y fondos", "Quita el título o el fondo a los widgets que quieras."),
+               ("widgets", "Estilo · modo widgets", "Cómo se ven los widgets sueltos por el escritorio."),
+               ("panel", "Estilo · modo panel", "Cómo se ve el modo panel: el velo que cubre la pantalla y "
+                                                "sus tarjetas."),
+               ("disposicion", "Disposición y tamaño", "Dónde se colocan los widgets y de qué tamaño."),
+               ("packs", "Packs", None),
+               ("general", "General", "Idioma, arranque, lecturas y actualizaciones."))
 
     def __init__(self, app):
         super().__init__(title=_("Configuración · MoonDeck"))
@@ -2468,11 +2476,15 @@ class VentanaConfig(Gtk.Window):
         pagina = pagina or self.pila.get_visible_child_name()
         for hijo in self.pila.get_children():
             self.pila.remove(hijo)
-        for clave, titulo in self.PAGINAS:
+        for clave, titulo, intro in self.PAGINAS:
             scroll = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
             cont = caja(True, 18)
             for lado in ("top", "bottom", "start", "end"):
                 getattr(cont, f"set_margin_{lado}")(22)
+            if intro:
+                lb = Gtk.Label(label=_(intro), xalign=0, wrap=True, max_width_chars=70)
+                lb.get_style_context().add_class("dim-label")
+                cont.pack_start(lb, False, False, 0)
             getattr(self, f"pagina_{clave}")(cont)
             scroll.add(cont)
             self.pila.add_titled(scroll, clave, _(titulo))
@@ -2692,20 +2704,30 @@ class VentanaConfig(Gtk.Window):
             (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
+        lista = self.grupo(cont, "Multimedia")
+        sw = Gtk.Switch(active=app.config.get("mantener_volumen", True))
+        sw.connect("notify::active", lambda w, _p: app.cambiar_mantener_volumen(w.get_active()))
+        self.fila(lista, "Mantener el volumen de cada app", sw,
+                  "Si cambias el volumen de una app aquí y ella pone otro al empezar otra canción "
+                  "(Firefox lo hace), MoonDeck vuelve a poner el tuyo.")
+
         packs.llamar(app.packs, "ajustes", self, cont)
 
-        lista = self.grupo(cont, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
+    def pagina_titulos(self, cont):
+        """Título (CPU, RELOJ…) y fondo con borde de cada widget, en una sola lista."""
+        app = self.app
+        lista = self.grupo(cont, "Cada widget", "Sin título se gana espacio; sin fondo ni borde, del widget "
+                                                "solo se ve su contenido.")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
-            sw = Gtk.Switch(active=t.clave not in sin)
-            sw.connect("notify::active", lambda w, _p, t=t: app.alternar_titulo(t, w.get_active()))
-            self.fila(lista, t.nombre_menu, sw)
-
-        lista = self.grupo(cont, "Fondo y borde", "Sin fondo ni borde, del widget solo se ve su contenido.")
-        for t in app.tarjetas:
-            sw = Gtk.Switch(active=not t.sin_fondo())
-            sw.connect("notify::active", lambda w, _p, t=t: app.alternar_fondo(t, w.get_active()))
-            self.fila(lista, t.nombre_menu, sw)
+            botones = caja(False, 14)
+            titulo = Gtk.CheckButton(label=_("Título"), active=t.clave not in sin)
+            titulo.connect("toggled", lambda w, t=t: app.alternar_titulo(t, w.get_active()))
+            fondo = Gtk.CheckButton(label=_("Fondo"), active=not t.sin_fondo())
+            fondo.connect("toggled", lambda w, t=t: app.alternar_fondo(t, w.get_active()))
+            botones.pack_start(titulo, False, False, 0)
+            botones.pack_start(fondo, False, False, 0)
+            self.fila(lista, t.nombre_menu, botones)
 
     def pagina_tarjetas(self, cont, seccion):
         lista = self.grupo(cont, "Fondo")
@@ -2735,15 +2757,20 @@ class VentanaConfig(Gtk.Window):
         self.pagina_tarjetas(cont, "widgets")
 
     def pagina_panel(self, cont):
-        self.pagina_tarjetas(cont, "panel")
-
-    def pagina_fondo(self, cont):
         s = "panel"
         lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
         self.fila(lista, "Imagen", self.imagen(s, "panel_imagen"), "Una foto o un fondo para todo el panel")
         self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "panel_imagen_opacidad", 0, 100, 100))
+        self.pagina_tarjetas(cont, s)
+
+    def numero(self, clave, minimo, maximo, paso, digitos, fn):
+        b = Gtk.SpinButton.new_with_range(minimo, maximo, paso)
+        b.set_digits(digitos)
+        b.set_value(self.app.config.get(clave, {"ancho": ANCHO, "columnas": COLUMNAS, "intervalo": INTERVALO}[clave]))
+        b.connect("value-changed", lambda b: fn(b.get_value()))
+        return b
 
     def pagina_disposicion(self, cont):
         cfg = self.app.config
@@ -2770,6 +2797,12 @@ class VentanaConfig(Gtk.Window):
         auto.connect("clicked", lambda _b: (cfg.pop("posiciones_predeterminadas", None), self.app.guardar_config(),
                                              self.construir()))
         self.fila(lista, "Colocación automática", auto)
+
+        lista = self.grupo(cont, "Tamaño", "En el modo widgets.")
+        self.fila(lista, "Ancho de cada widget", self.numero("ancho", 260, 560, 10, 0, self.app.cambiar_ancho),
+                  "En píxeles")
+        self.fila(lista, "Columnas al colocarlos", self.numero("columnas", 1, 8, 1, 0, self.app.cambiar_columnas),
+                  "Las mínimas: si no caben en alto, se usan más")
 
     def guardar_panel(self):
         p = self.app.panel
@@ -2869,19 +2902,8 @@ class VentanaConfig(Gtk.Window):
                   "Girando la rueda sobre un widget (menos en las barras de volumen y similares). "
                   "Con Ctrl + rueda abajo, se ven todos los escritorios.")
 
-        lista = self.grupo(cont, "Widgets")
-
-        def numero(clave, minimo, maximo, paso, digitos, fn):
-            b = Gtk.SpinButton.new_with_range(minimo, maximo, paso)
-            b.set_digits(digitos)
-            b.set_value(app.config.get(clave, {"ancho": ANCHO, "columnas": COLUMNAS, "intervalo": INTERVALO}[clave]))
-            b.connect("value-changed", lambda b: fn(b.get_value()))
-            return b
-        self.fila(lista, "Ancho de cada widget", numero("ancho", 260, 560, 10, 0, app.cambiar_ancho),
-                  "En píxeles, en el modo widgets")
-        self.fila(lista, "Columnas al colocarlos", numero("columnas", 1, 8, 1, 0, app.cambiar_columnas),
-                  "Las mínimas: si no caben en alto, se usan más")
-        self.fila(lista, "Actualizar cada", numero("intervalo", 0.5, 5, 0.5, 1, app.cambiar_intervalo),
+        lista = self.grupo(cont, "Sensores")
+        self.fila(lista, "Actualizar cada", self.numero("intervalo", 0.5, 5, 0.5, 1, app.cambiar_intervalo),
                   "Segundos entre lecturas de los sensores")
 
         lista = self.grupo(cont, "Actualizaciones", _("Busca la última versión estable en github.com/{repo}. "
@@ -3016,6 +3038,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.areas = {}      # monitor -> (ancho, alto) del área libre
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
+        self.mezclador.mantener_volumen(self.config.get("mantener_volumen", True))
         self.dispositivos = Dispositivos()
         self.escritorios = Escritorios()
         self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
@@ -3977,6 +4000,11 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True)
         self.guardar_config()
+
+    def cambiar_mantener_volumen(self, activo):
+        self.config["mantener_volumen"] = activo
+        self.guardar_config()
+        self.mezclador.mantener_volumen(activo)
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

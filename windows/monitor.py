@@ -2514,9 +2514,17 @@ class VentanaConfig(QWidget):
     """Temas, colores, fuentes, fondos, disposición por defecto y ajustes generales.
     Todo se aplica al momento."""
 
-    PAGINAS = (("tema", "Tema"), ("ajustes", "Widgets"), ("widgets", "Tarjetas · modo widgets"),
-               ("panel", "Tarjetas · modo panel"), ("fondo", "Fondo del panel"), ("disposicion", "Disposición"),
-               ("packs", "Packs"), ("general", "General"))
+    # (clave, título en la barra lateral, una frase arriba de la página)
+    PAGINAS = (("tema", "Tema", "Colores y letra de todo MoonDeck. Los cambios se aplican al momento."),
+               ("ajustes", "Opciones de widgets", "Lo que muestra y hace cada widget. Cuáles se ven se elige "
+                                                  "con el clic derecho › Widgets visibles."),
+               ("titulos", "Títulos y fondos", "Quita el título o el fondo a los widgets que quieras."),
+               ("widgets", "Estilo · modo widgets", "Cómo se ven los widgets sueltos por el escritorio."),
+               ("panel", "Estilo · modo panel", "Cómo se ve el modo panel: el velo que cubre la pantalla y "
+                                                "sus tarjetas."),
+               ("disposicion", "Disposición y tamaño", "Dónde se colocan los widgets y de qué tamaño."),
+               ("packs", "Packs", None),
+               ("general", "General", "Idioma, arranque, lecturas y actualizaciones."))
     ESTILO = ESTILO_DIALOGO + """
     QWidget#raiz { background: #1b1e25; }
     QListWidget { background: #16181e; color: #d0d6e0; border: none; font-size: 10pt; outline: none; }
@@ -2551,7 +2559,7 @@ class VentanaConfig(QWidget):
         fila.addWidget(self.lista)
         self.pila = QStackedWidget()
         fila.addWidget(self.pila, 1)
-        for _x, titulo in self.PAGINAS:
+        for _x, titulo, _y in self.PAGINAS:
             self.lista.addItem(QListWidgetItem(_(titulo)))
         self.lista.currentRowChanged.connect(self.pila.setCurrentIndex)
         self.construir()
@@ -2564,7 +2572,7 @@ class VentanaConfig(QWidget):
             w = self.pila.widget(0)
             self.pila.removeWidget(w)
             w.deleteLater()
-        for clave, _ in self.PAGINAS:
+        for clave, _x, intro in self.PAGINAS:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -2572,6 +2580,11 @@ class VentanaConfig(QWidget):
             caja = QVBoxLayout(cont)
             caja.setContentsMargins(22, 18, 22, 22)
             caja.setSpacing(8)
+            if intro:
+                lb = QLabel(_(intro))
+                lb.setObjectName("ayuda")
+                lb.setWordWrap(True)
+                caja.addWidget(lb)
             getattr(self, f"pagina_{clave}")(caja)
             caja.addStretch()
             scroll.setWidget(cont)
@@ -2796,22 +2809,34 @@ class VentanaConfig(QWidget):
         nixie.clicked.connect(elegir_nixie)
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
+        lista = self.grupo(caja, "Multimedia")
+        c = QCheckBox()
+        c.setChecked(app.config.get("mantener_volumen", True))
+        c.toggled.connect(app.cambiar_mantener_volumen)
+        self.fila(lista, "Mantener el volumen de cada app", c,
+                  "Si cambias el volumen de una app aquí y ella pone otro al empezar otra canción "
+                  "(Firefox lo hace), MoonDeck vuelve a poner el tuyo.")
+
         packs.llamar(app.packs, "ajustes", self, caja)
 
-        lista = self.grupo(caja, "Títulos", "El nombre que sale arriba de cada widget (CPU, RELOJ…).")
+    def pagina_titulos(self, caja):
+        """Título (CPU, RELOJ…) y fondo con borde de cada widget, en una sola lista."""
+        app = self.app
+        lista = self.grupo(caja, "Cada widget", "Sin título se gana espacio; sin fondo ni borde, del widget "
+                                                "solo se ve su contenido.")
         sin = app.config.get("sin_titulo", [])
         for t in app.tarjetas:
-            ch = QCheckBox()
-            ch.setChecked(t.clave not in sin)
-            ch.toggled.connect(lambda v, t=t: app.alternar_titulo(t, v))
-            self.fila(lista, t.nombre_menu, ch)
-
-        lista = self.grupo(caja, "Fondo y borde", "Sin fondo ni borde, del widget solo se ve su contenido.")
-        for t in app.tarjetas:
-            ch = QCheckBox()
-            ch.setChecked(not t.sin_fondo())
-            ch.toggled.connect(lambda v, t=t: app.alternar_fondo(t, v))
-            self.fila(lista, t.nombre_menu, ch)
+            botones = QHBoxLayout()
+            botones.setSpacing(14)
+            titulo = QCheckBox(_("Título"))
+            titulo.setChecked(t.clave not in sin)
+            titulo.toggled.connect(lambda v, t=t: app.alternar_titulo(t, v))
+            fondo = QCheckBox(_("Fondo"))
+            fondo.setChecked(not t.sin_fondo())
+            fondo.toggled.connect(lambda v, t=t: app.alternar_fondo(t, v))
+            botones.addWidget(titulo)
+            botones.addWidget(fondo)
+            self.fila(lista, t.nombre_menu, botones)
 
     def pagina_tarjetas(self, caja, s):
         lista = self.grupo(caja, "Fondo")
@@ -2841,15 +2866,13 @@ class VentanaConfig(QWidget):
         self.pagina_tarjetas(caja, "widgets")
 
     def pagina_panel(self, caja):
-        self.pagina_tarjetas(caja, "panel")
-
-    def pagina_fondo(self, caja):
         s = "panel"
         lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
         self.fila(lista, "Imagen", self.imagen(s, "panel_imagen"), "Una foto o un fondo para todo el panel")
         self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "panel_imagen_opacidad", 0, 100, 100))
+        self.pagina_tarjetas(caja, s)
 
     def pagina_disposicion(self, caja):
         cfg = self.app.config
@@ -2874,6 +2897,19 @@ class VentanaConfig(QWidget):
         b.clicked.connect(lambda: (cfg.pop("posiciones_predeterminadas", None), self.app.guardar_config(),
                                    self.construir()))
         self.fila(lista, "Colocación automática", b)
+
+        lista = self.grupo(caja, "Tamaño", "En el modo widgets.")
+        ancho = QSpinBox()
+        ancho.setRange(260, 560)
+        ancho.setSingleStep(10)
+        ancho.setValue(ANCHO)
+        ancho.valueChanged.connect(self.app.cambiar_ancho)
+        self.fila(lista, "Ancho de cada widget", ancho, "En píxeles")
+        cols = QSpinBox()
+        cols.setRange(1, 8)
+        cols.setValue(COLUMNAS)
+        cols.valueChanged.connect(self.app.cambiar_columnas)
+        self.fila(lista, "Columnas al colocarlos", cols, "Las mínimas: si no caben en alto, se usan más")
 
     def guardar_panel(self):
         p = self.app.panel
@@ -2975,18 +3011,7 @@ class VentanaConfig(QWidget):
         self.fila(lista, "Cambiar de escritorio con la rueda del ratón", c,
                   "Girando la rueda sobre un widget (menos en las barras de volumen y similares). "
                   "Con Ctrl + rueda abajo, se ven todos los escritorios.")
-        lista = self.grupo(caja, "Widgets")
-        ancho = QSpinBox()
-        ancho.setRange(260, 560)
-        ancho.setSingleStep(10)
-        ancho.setValue(ANCHO)
-        ancho.valueChanged.connect(app.cambiar_ancho)
-        self.fila(lista, "Ancho de cada widget", ancho, "En píxeles, en el modo widgets")
-        cols = QSpinBox()
-        cols.setRange(1, 8)
-        cols.setValue(COLUMNAS)
-        cols.valueChanged.connect(app.cambiar_columnas)
-        self.fila(lista, "Columnas al colocarlos", cols, "Las mínimas: si no caben en alto, se usan más")
+        lista = self.grupo(caja, "Sensores")
         intervalo = QDoubleSpinBox()
         intervalo.setRange(0.5, 5)
         intervalo.setSingleStep(0.5)
@@ -3124,6 +3149,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.manual = False  # True cuando el usuario arrastra un widget
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
+        self.mezclador.mantener_volumen(self.config.get("mantener_volumen", True))
         self.dispositivos = Dispositivos()
         log("Mezclador:", "OK" if self.mezclador.ok else self.mezclador.error,
             "| dispositivos:", "OK" if self.dispositivos.ok else self.dispositivos.error)
@@ -4062,6 +4088,11 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True, pantalla=self.pantalla_guardada())
         self.guardar_config()
+
+    def cambiar_mantener_volumen(self, activo):
+        self.config["mantener_volumen"] = activo
+        self.guardar_config()
+        self.mezclador.mantener_volumen(activo)
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

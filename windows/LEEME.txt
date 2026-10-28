@@ -139,22 +139,28 @@ Menu > "Configuracion...". Todo se aplica al momento:
                          acento, colores del texto, fuente y tamano de letra.
                          "Exportar" / "Importar" guardan o cargan el tema en un
                          archivo .json para compartirlo.
-  Widgets .............. la ciudad del tiempo, en que dia empieza la semana del
-                         calendario (lunes o domingo), el tipo de reloj y que
-                         widgets muestran su titulo.
-  Tarjetas (modo widgets y modo panel, por separado): color y opacidad del
+  Opciones de widgets .. la ciudad del tiempo, en que dia empieza la semana del
+                         calendario (lunes o domingo), el tipo de reloj,
+                         "Mantener el volumen de cada app" (si una app como
+                         Firefox se pone su volumen al empezar otra cancion,
+                         MoonDeck vuelve a poner el que le diste) y lo de cada
+                         pack (Discord, test de velocidad, aplicaciones...).
+  Titulos y fondos ..... quitar el titulo o el fondo a cada widget.
+  Estilo (modo widgets y modo panel, por separado): color y opacidad del
                          fondo, degradado (dos colores y direccion), cristal
                          acrilico si/no, imagen de fondo con su opacidad, color,
                          opacidad y grosor del borde, esquinas redondeadas,
                          "Modo neon" (el borde brilla como un tubo de neon) y
                          "Parpadeo" (el neon falla a ratos, como un tubo viejo).
-  Fondo del panel ...... color, opacidad e imagen para toda la pantalla.
-  Disposicion .......... guardar la disposicion actual del panel como la de
+                         En el modo panel, ademas, el fondo que cubre toda la
+                         pantalla: color, opacidad e imagen.
+  Disposicion y tamano . guardar la disposicion actual del panel como la de
                          "Restablecer" (o volver a la de fabrica), y guardar las
                          posiciones actuales de los widgets como las de
-                         "Recolocar widgets".
-  General .............. idioma, abrir al iniciar sesion, ancho de los widgets,
-                         columnas al colocarlos y cada cuanto se actualizan.
+                         "Recolocar widgets"; el ancho de los widgets y las
+                         columnas al colocarlos.
+  General .............. idioma, abrir al iniciar sesion, la rueda del raton,
+                         cada cuanto se leen los sensores y actualizaciones.
 
 
 TIEMPO
@@ -163,7 +169,8 @@ El tiempo de tu ciudad: ahora (temperatura, sensacion, humedad, viento, salida
 y puesta del sol), las proximas horas y los proximos 6 dias con la
 probabilidad de lluvia. Datos de Open-Meteo (gratis, sin cuenta); se actualiza
 cada 15 minutos. Por defecto, Barbate (Cadiz), la tierra del creador.
-Clic derecho > "Cambiar ciudad..." (o Configuracion > Widgets) para buscar la tuya.
+Clic derecho > "Cambiar ciudad..." (o Configuracion > Opciones de widgets) para
+buscar la tuya.
 
 
 DISCORD
@@ -192,9 +199,10 @@ Funciona con la app de escritorio de Discord (no con la web).
 
 Sin estar en voz, el widget muestra los canales de voz de tu servidor (con
 quien hay en cada uno): pulsa uno para entrar. Elige tu servidor en
-Configuracion > Widgets > "Tu servidor de Discord". Si Discord esta cerrado,
-el boton "Abrir Discord" lo abre minimizado y, si quieres, te mete en el
-ultimo canal o donde haya mas gente (Configuracion > Widgets > Discord).
+Configuracion > Opciones de widgets > "Tu servidor de Discord". Si Discord
+esta cerrado, el boton "Abrir Discord" lo abre minimizado y, si quieres, te
+mete en el ultimo canal o donde haya mas gente (Configuracion > Opciones de
+widgets > Discord).
 
 
 RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
