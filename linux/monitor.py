@@ -742,6 +742,7 @@ class FilaReproductor(Gtk.Box):
         self.rep = reproductores
         self.ident = None
         self.clave_portada = None
+        self.pista_portada = None
         arriba = caja(False, 10)
         self.portada = Portada()
         arriba.pack_start(self.portada, False, False, 0)
@@ -804,10 +805,16 @@ class FilaReproductor(Gtk.Box):
         self.b_anterior.set_sensitive(d["anterior"])
         self.b_siguiente.set_sensitive(d["siguiente"])
         self.b_play.set_sensitive(d["play_pausa"])
+        # Firefox quita la portada de los metadatos al poco de ponerla: mientras siga la misma
+        # canción, se queda la que había.
+        pista = (d["id"], d["titulo"], d["artista"])
+        if not d["portada"] and self.clave_portada and pista == self.pista_portada:
+            return
         if d["portada"] != self.clave_portada:
             datos = self.rep.portada(d["portada"])
             if datos or not d["portada"]:
                 self.clave_portada = d["portada"]
+                self.pista_portada = pista
             self.portada.poner(datos)
 
 

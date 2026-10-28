@@ -254,6 +254,10 @@ class _Pulse:
         self.lock = threading.Lock()
         self.ordenes = queue.Queue()
         self.despertar = threading.Event()
+        # Volumen que el usuario puso a cada app desde MoonDeck: algunas (Firefox) ponen el
+        # suyo propio a cada stream nuevo (p. ej. al empezar otra canción) y se lo devolvemos.
+        self.fijados = {}     # app -> (volumen en tanto por uno, cuándo se fijó)
+        self.nacidos = {}     # índice de stream -> cuándo lo vimos por primera vez
         if self.ok:
             try:
                 self._leer()  # la primera lectura, ya: el panel calcula la cuadrícula con ella
@@ -288,6 +292,7 @@ class _Pulse:
             if p.get("media.role") == "event":  # sonidos del sistema
                 continue
             grupos.setdefault(nombre_app(nombre), []).append(b)
+        self._mantener_fijados(grupos)
         lista_apps = [(n, [b["_indice"] for b in bs], volumen_de(bs[0]), bs[0].get("Mute") == "yes")
                       for n, bs in sorted(grupos.items(), key=lambda x: x[0].lower())]
 
@@ -304,6 +309,22 @@ class _Pulse:
         }
         with self.lock:
             self.datos = datos
+
+    def _mantener_fijados(self, grupos):
+        """A los streams nuevos (sus primeros segundos) de una app con volumen fijado se les
+        vuelve a poner. Si después cambia (otro mezclador, el reproductor), eso pasa a ser lo fijado."""
+        ahora = time.monotonic()
+        self.nacidos = {b["_indice"]: self.nacidos.get(b["_indice"], ahora) for bs in grupos.values() for b in bs}
+        for nombre, (vol, cuando) in list(self.fijados.items()):
+            for b in grupos.get(nombre, []):
+                actual = volumen_de(b)
+                if abs(actual - vol) < 0.01:
+                    continue
+                if ahora - self.nacidos[b["_indice"]] < 5:
+                    self.orden(f"fijo-{b['_indice']}", ("set-sink-input-volume", b["_indice"], f"{round(vol * 100)}%"))
+                    b["Volume"] = f"{round(vol * 100)}%"  # que el deslizador no salte mientras
+                elif ahora - cuando > 3:  # (no justo después de moverlo: aún no se ha aplicado)
+                    self.fijados[nombre] = (actual, ahora)
 
     def _ejecutor(self):
         while True:
@@ -358,6 +379,7 @@ class Mezclador:
         if nombre is None:
             self.p.orden("vol-general", ("set-sink-volume", "@DEFAULT_SINK@", pct))
         else:
+            self.p.fijados[nombre] = (round(valor * 100) / 100, time.monotonic())
             self.p.orden(f"vol-{nombre}", *(("set-sink-input-volume", i, pct) for i in self._indices.get(nombre, [])))
 
     def silencio(self, nombre, activo):
