@@ -124,7 +124,7 @@ class Reproductores:
             lista.append({
                 "id": ident, "app": nombre_app(app), "titulo": titulo or _("(sin título)"),
                 "artista": artista, "reproduciendo": reproduciendo,
-                "pos": pos, "dur": dur, "portada": portada,
+                "pos": pos, "dur": dur, "portada": portada, "momento": time.monotonic(),  # de cuándo es "pos"
                 "anterior": ctr.is_previous_enabled, "siguiente": ctr.is_next_enabled,
                 "play_pausa": ctr.is_play_pause_toggle_enabled or ctr.is_play_enabled or ctr.is_pause_enabled,
                 "buscar": bool(ctr.is_playback_position_enabled and dur > 0),
@@ -356,3 +356,115 @@ class Dispositivos:
         else:
             self.error = None
         return f"micrófonos: {len(self._mics)}, pedido {'silencio' if activo else 'activar'}, estado {estados}"
+
+
+class ProgramaTeclado:
+    """El programa del fabricante de un teclado con modo música en los LED (LEOBOG ONE y
+    parecidos): el modo lo hace el programa solo mientras está abierto, y él recuerda que estaba
+    activado. Encenderlo es abrirlo y esconder su ventana (lo que hace su X, que lo deja en la
+    bandeja); apagarlo, cerrarlo. Vale para cualquier programa que funcione así."""
+
+    # Los que se proponen solos si están instalados: (nombre, ruta con variables de entorno)
+    CONOCIDOS = (
+        ("LEOBOG ONE", r"%ProgramFiles(x86)%\LEOBOG ONE\OemDrv.exe"),
+    )
+
+    def __init__(self):
+        self.ruta = None
+        self.esconder_ventana = True
+        self.error = None
+        self._pid = None   # el que hemos abierto, mientras falta esconder su ventana
+        self._espera = 0
+
+    @classmethod
+    def detectar(cls):
+        """La ruta del primer programa conocido que esté instalado, o None."""
+        import os
+        if not ES_WINDOWS:
+            return None
+        for _nombre, ruta in cls.CONOCIDOS:
+            ruta = os.path.expandvars(ruta)
+            if os.path.exists(ruta):
+                return ruta
+        return None
+
+    @classmethod
+    def nombre(cls, ruta):
+        """Nombre para mostrar: el del programa conocido, o el del ejecutable."""
+        import os
+        for nombre, conocida in cls.CONOCIDOS:
+            if os.path.normcase(os.path.expandvars(conocida)) == os.path.normcase(ruta):
+                return nombre
+        return os.path.splitext(os.path.basename(ruta))[0]
+
+    def configurar(self, ruta, esconder_ventana=True):
+        self.ruta, self.esconder_ventana = ruta or None, esconder_ventana
+        self.error = None
+
+    @property
+    def disponible(self):
+        import os
+        return bool(ES_WINDOWS and self.ruta and os.path.exists(self.ruta))
+
+    def abierto(self):
+        import os
+        import psutil
+        if not self.ruta:
+            return None
+        ejecutable = os.path.basename(self.ruta).lower()
+        for p in psutil.process_iter(["name"]):
+            if (p.info["name"] or "").lower() == ejecutable:
+                return p
+        return None
+
+    def alternar(self):
+        """Lo abre o lo cierra. Devuelve True si queda abierto."""
+        import os
+        import subprocess
+        self.error = None
+        p = self.abierto()
+        try:
+            if p:
+                self._pid = None
+                p.terminate()
+                try:
+                    p.wait(timeout=2)
+                except Exception:  # noqa: BLE001
+                    p.kill()
+                return False
+            self._pid = subprocess.Popen([self.ruta], cwd=os.path.dirname(self.ruta)).pid
+            self._espera = 0
+            if not self.esconder_ventana:
+                self._pid = None
+            return True
+        except Exception as e:  # noqa: BLE001
+            self._pid = None
+            self.error = _("No se pudo abrir el programa del teclado: {error}").format(error=e)
+            return bool(p)
+
+    def esconder(self):
+        """Llamar a menudo después de abrirlo: en cuanto sale su ventana la esconde. No vale
+        WM_CLOSE: en LEOBOG ONE es un diálogo y lo cerraría del todo. Devuelve True mientras
+        siga esperando."""
+        if not self._pid:
+            return False
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        ventanas = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def mirar(hwnd, _l):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == self._pid and user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd):
+                ventanas.append(hwnd)
+            return True
+
+        user32.EnumWindows(mirar, 0)
+        for hwnd in ventanas:
+            user32.ShowWindow(hwnd, 0)  # SW_HIDE
+        self._espera += 1
+        if ventanas or self._espera > 300:  # ~15 s
+            self._pid = None
+        return bool(self._pid)

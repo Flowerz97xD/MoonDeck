@@ -78,7 +78,8 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
     bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else os.geteuid() == 0)
 
 try:
-    from PySide6.QtCore import QEvent, QFileInfo, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
+    from PySide6.QtCore import (QEasingCurve, QEvent, QFileInfo, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl,
+                                QVariantAnimation, Signal)
     from PySide6.QtGui import (QBrush, QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF,
                                QGuiApplication, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
                                QPolygonF)
@@ -89,7 +90,7 @@ try:
                                    QStackedWidget, QStyle, QSystemTrayIcon, QToolButton, QTreeWidget,
                                    QTreeWidgetItem, QVBoxLayout, QWidget)
 
-    from multimedia import Dispositivos, Mezclador, Reproductores
+    from multimedia import Dispositivos, Mezclador, ProgramaTeclado, Reproductores
     import velocimetro
     import esferas
     import packs
@@ -421,9 +422,10 @@ def leyenda(*items):
 # Iconos de Windows 11 (Segoe Fluent Icons) o de Windows 10 (Segoe MDL2 Assets);
 # en otros sistemas, símbolos Unicode.
 ICONOS = {"anterior": "\uE892", "play": "\uE768", "pausa": "\uE769", "siguiente": "\uE893",
-          "volumen": "\uE767", "silencio": "\uE74F", "micro": "\uE720", "micro_off": "\uEC54"}
+          "volumen": "\uE767", "silencio": "\uE74F", "micro": "\uE720", "micro_off": "\uEC54",
+          "teclado": "\uE765"}
 ICONOS_UNICODE = {"anterior": "⏮", "play": "▶", "pausa": "⏸", "siguiente": "⏭",
-                  "volumen": "🔊", "silencio": "🔇", "micro": "🎙", "micro_off": "🚫"}
+                  "volumen": "🔊", "silencio": "🔇", "micro": "🎙", "micro_off": "🚫", "teclado": "⌨"}
 _fuente_iconos = None
 
 
@@ -440,6 +442,71 @@ def boton_icono(nombre, tam=12):
     b.setCursor(Qt.PointingHandCursor)
     poner_icono(b, nombre, tam)
     return b
+
+
+class InterruptorTecladoMusica(QToolButton):
+    """Interruptor del modo música de los LED del teclado: una pastilla con el teclado a un
+    lado y las notas al otro; el resaltado se desliza hacia el lado activo (acento al encender).
+    Del alto de los botones de icono, con los colores del tema."""
+
+    def __init__(self):
+        super().__init__()
+        self.setCursor(Qt.PointingHandCursor)
+        self.encendido = False
+        self._pos = 0.0  # 0 = teclado, 1 = notas (animado)
+        self._anim = QVariantAnimation(self, duration=180, easingCurve=QEasingCurve.OutCubic)
+        self._anim.valueChanged.connect(lambda v: (setattr(self, "_pos", v), self.update()))
+
+    def poner(self, encendido):
+        if encendido != self.encendido:
+            self.encendido = encendido
+            self._anim.stop()
+            self._anim.setStartValue(self._pos)
+            self._anim.setEndValue(1.0 if encendido else 0.0)
+            self._anim.start()
+
+    def sizeHint(self):
+        h = boton_icono("micro", 10).sizeHint().height()  # del alto del botón del micro, a su lado
+        return QSize(round(h * 2.25), h)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.update()
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h, m = self.width(), self.height(), 2
+        p.setPen(Qt.NoPen)
+        p.setBrush(tenue(34 if self.underMouse() else 22))
+        p.drawRoundedRect(QRectF(0, 0, w, h), h / 2, h / 2)
+        # El resaltado: del gris tenue (teclado) al acento (notas) según se desliza
+        t = self._pos
+        ancho, alto = (w - 2 * m) / 2, h - 2 * m
+        apagado, encendido = tenue(45), acento()
+        p.setBrush(QColor.fromRgbF(*(a + (b - a) * t for a, b in zip(apagado.getRgbF(), encendido.getRgbF()))))
+        p.drawRoundedRect(QRectF(m + ancho * t, m, ancho, alto), alto / 2, alto / 2)
+        familia = fuente_iconos()
+        lados = ((ICONOS["teclado"] if familia else "⌨", 1 - t), ("\uE8D6" if familia else "♫", t))  # \uE8D6: notas
+        f = QFont(familia) if familia else QFont(self.font())
+        f.setPixelSize(max(8, round(alto * 0.62)))  # que el icono quepa en el resaltado, con margen
+        p.setFont(f)
+        fm = QFontMetricsF(f)
+        activo, inactivo = QColor(C_TEXTO), QColor(C_SEC)
+        for i, (glifo, peso) in enumerate(lados):
+            c = QColor("white") if i == 1 and t > 0.5 else activo
+            p.setPen(QColor.fromRgbF(*(a + (b - a) * peso for a, b in zip(inactivo.getRgbF(), c.getRgbF()))))
+            # Centrado por el dibujo del icono, no por la caja de la letra (en esta fuente no coinciden)
+            caja = QRectF(m + ancho * i, m, ancho, alto).center()
+            dibujo = fm.tightBoundingRect(glifo).center()
+            p.drawText(QPointF(caja.x() - dibujo.x(), caja.y() - dibujo.y()), glifo)
 
 
 def poner_icono(boton, nombre, tam=12):
@@ -517,6 +584,16 @@ class LienzoQt:
         self.p.setPen(Qt.NoPen)
         self.p.setBrush(color_qt(color))
         self.p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in puntos]))
+
+    def recortar(self, x, y, w, h, radio):
+        """Lo que se dibuje hasta sin_recorte() no sale de este rectángulo redondeado."""
+        camino = QPainterPath()
+        camino.addRoundedRect(QRectF(x, y, w, h), radio, radio)
+        self.p.save()
+        self.p.setClipPath(camino)
+
+    def sin_recorte(self):
+        self.p.restore()
 
     _hojas = {}  # la hoja del dinosaurio ya teñida, por color
 
@@ -1331,7 +1408,11 @@ class Tarjeta(QWidget):
 
     def poner_esquina(self, w):
         """Un botón pequeño a la derecha del título (p. ej. silenciar si el volumen no cabe).
-        Empieza oculto: lo muestra quien lo pone."""
+        Empieza oculto: lo muestra quien lo pone. Si ya hay alguno, va a su izquierda."""
+        if getattr(self, "_esquina", None):
+            self._esquina.insertWidget(1, w)
+            w.hide()
+            return w
         cab = QWidget()
         fila = QHBoxLayout(cab)
         fila.setContentsMargins(0, 0, 0, 0)
@@ -1339,6 +1420,7 @@ class Tarjeta(QWidget):
         self.caja.replaceWidget(self.lb_titulo, cab)
         fila.addWidget(self.lb_titulo, 1)
         fila.addWidget(w)
+        self._esquina = fila
         w.hide()
         return w
 
@@ -2763,7 +2845,46 @@ class VentanaConfig(QWidget):
         nixie.clicked.connect(elegir_nixie)
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
+        if ES_WINDOWS:
+            self.ajustes_teclado(caja)
         packs.llamar(app.packs, "ajustes", self, caja)
+
+    def ajustes_teclado(self, caja):
+        """El programa del teclado para el interruptor de modo música de la tarjeta de audio."""
+        app = self.app
+        lista = self.grupo(caja, "Modo música del teclado",
+                           "Para teclados cuyo programa enciende los LED con la música mientras está abierto "
+                           "(LEOBOG ONE y parecidos). Activa el modo música una vez en ese programa; luego el "
+                           "interruptor de la tarjeta de dispositivos de audio lo abre y lo cierra.")
+        fila = QHBoxLayout()
+        ruta = app.teclado.ruta
+        actual = QLabel(ProgramaTeclado.nombre(ruta) if ruta else _("Ninguno"))
+        actual.setObjectName("sub")
+        if ruta:
+            actual.setToolTip(ruta)
+        elegir = QPushButton(_("Elegir programa…"))
+
+        def elegir_programa():
+            inicio = os.path.dirname(ruta) if ruta else os.environ.get("ProgramFiles(x86)", "")
+            nueva, _filtro = QFileDialog.getOpenFileName(self, _("Programa del teclado"), inicio,
+                                                         _("Programas") + " (*.exe)")
+            if nueva:
+                app.cambiar_programa_teclado(os.path.normpath(nueva))
+                self.construir()
+        elegir.clicked.connect(elegir_programa)
+        fila.addWidget(actual)
+        fila.addWidget(elegir)
+        if ruta:
+            quitar = QPushButton(_("Quitar"))
+            quitar.clicked.connect(lambda: (app.cambiar_programa_teclado(""), self.construir()))
+            fila.addWidget(quitar)
+        self.fila(lista, "Programa del teclado", fila, "El ejecutable (.exe) del programa de tu teclado")
+        c = QCheckBox()
+        c.setChecked(app.config.get("teclado_esconder", True))
+        c.toggled.connect(lambda v: app.cambiar_programa_teclado(esconder=v))
+        self.fila(lista, "Esconder su ventana al abrirlo", c,
+                  "Lo deja en los iconos ocultos de la barra de tareas, como su X. Desactívalo si "
+                  "con tu programa no funciona bien.")
 
     def pagina_titulos(self, caja):
         """Título (CPU, RELOJ…) y fondo con borde de cada widget, en una sola lista."""
@@ -3068,7 +3189,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("apps")
             self.config["apps_visto"] = True
-        for clave in ("immich", "docker"):
+        for clave in ("immich", "docker", "letras", "mascota"):
             if not self.config.get(f"{clave}_visto"):  # widgets nuevos: llegan ocultos
                 self.config.setdefault("ocultos", []).append(clave)
                 self.config[f"{clave}_visto"] = True
@@ -3091,6 +3212,12 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
         self.dispositivos = Dispositivos()
+        # Modo música de los LED del teclado: el programa elegido en Ajustes; si no se ha elegido
+        # ninguno (ni quitado), uno conocido que esté instalado
+        self.teclado = ProgramaTeclado()
+        ruta = self.config.get("teclado_programa")
+        self.teclado.configurar(ProgramaTeclado.detectar() if ruta is None else ruta,
+                                self.config.get("teclado_esconder", True))
         log("Mezclador:", "OK" if self.mezclador.ok else self.mezclador.error,
             "| dispositivos:", "OK" if self.dispositivos.ok else self.dispositivos.error)
 
@@ -3330,6 +3457,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             # quitaba). Pide lo contrario de lo que hay de verdad, no lo que diga el botón.
             a["mic"] = c.poner_esquina(boton_icono("micro", 10))
             a["mic"].clicked.connect(lambda: self.silenciar_mic(not a.get("mic_estado")))
+            # Modo música de los LED del teclado: se ve si hay un programa elegido (Ajustes)
+            a["teclado"] = c.poner_esquina(InterruptorTecladoMusica())
+            a["teclado"].clicked.connect(self.alternar_teclado)
             a["aviso"] = c.add(etiqueta("", "dim"))
             a["aviso"].setWordWrap(True)
             self.audio = a
@@ -3885,13 +4015,29 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             poner_icono(a["mic"], "micro_off" if mic else "micro", 10)
             a["mic"].setStyleSheet(f"color: {COLORES['rojo'].name()};" if mic else "")
             a["mic"].setToolTip(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
-        a["aviso"].setText(self.dispositivos.error or "")
-        a["aviso"].setVisible(bool(self.dispositivos.error))
+        a["teclado"].setVisible(self.teclado.disponible)
+        if self.teclado.disponible:
+            encendido = self.teclado.abierto() is not None
+            a["teclado"].poner(encendido)
+            a["teclado"].setToolTip(_("Modo música del teclado activado · clic para apagar") if encendido
+                                    else _("Activar el modo música del teclado"))
+        error = self.dispositivos.error or self.teclado.error
+        a["aviso"].setText(error or "")
+        a["aviso"].setVisible(bool(error))
         self.ajustar_alturas()
 
     def silenciar_mic(self, activo):
         log("Micrófono:", self.dispositivos.silenciar_mic(activo))
         self.actualizar_audio()  # refleja enseguida el estado real
+
+    def alternar_teclado(self):
+        log("Teclado, modo música:", self.teclado.alternar())
+        self.actualizar_audio()
+        if self.teclado._pid:
+            # Su ventana tarda en salir: se mira cada 50 ms para esconderla en cuanto aparece
+            self.t_teclado = QTimer(interval=50)
+            self.t_teclado.timeout.connect(lambda: self.teclado.esconder() or self.t_teclado.stop())
+            self.t_teclado.start()
 
     def desplegar_audio(self, clave):
         self.audio[clave + "_abierto"] = not self.audio[clave + "_abierto"]
@@ -4028,6 +4174,16 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True, pantalla=self.pantalla_guardada())
         self.guardar_config()
+
+    def cambiar_programa_teclado(self, ruta=None, esconder=None):
+        """ruta: el ejecutable elegido, o "" para quitarlo (sin volver a proponer uno conocido)."""
+        if ruta is not None:
+            self.config["teclado_programa"] = ruta
+        if esconder is not None:
+            self.config["teclado_esconder"] = esconder
+        self.guardar_config()
+        self.teclado.configurar(self.config.get("teclado_programa"), self.config.get("teclado_esconder", True))
+        self.actualizar_audio()
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

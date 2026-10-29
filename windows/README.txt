@@ -141,8 +141,9 @@ Menu > "Settings...". Everything applies instantly:
                          colors, font and text size. "Export" / "Import" save
                          or load the theme in a .json file to share it.
   Widget options ....... the weather city, which day the calendar week starts
-                         on (Monday or Sunday), the clock type and each
-                         widget's options (Discord, speed test, apps...).
+                         on (Monday or Sunday), the clock type, the keyboard
+                         program for its music mode (see Audio devices) and
+                         each widget's options (Discord, speed test, apps...).
   Titles and backgrounds  remove the title or background of each widget.
   Style (widgets mode and panel mode, separately): background color and
                          opacity, gradient (two colors and direction), acrylic
@@ -223,6 +224,12 @@ CLOCK, CALENDAR, AUDIO AND SPEED
                      the Windows default microphones (the multimedia one and
                      the communications one, used by Discord, Teams or games,
                      can be different).
+                     Keyboard / notes switch: the keyboard LEDs' music mode,
+                     for keyboards whose software does it while it is open
+                     (LEOBOG ONE and similar). It opens the software and leaves
+                     it in the hidden icons, or closes it. Turn on music mode
+                     once in the software; choose the software in Settings >
+                     Widget options (LEOBOG ONE is detected automatically).
   Speed test ....... a speedometer like a car's; "Start test" button: measures
                      ping, download and upload in about 15 s against
                      Cloudflare's servers (the ones of speed.cloudflare.com).
@@ -290,6 +297,45 @@ widgets" > Games). Right-click > "Game" to choose and "New game".
                      and down arrow to duck.
 To use the keyboard, click the game first. For the widget menu, right-click
 outside the board (for example on the title).
+
+
+LYRICS
+------
+The lyrics of what's playing, synced like in Spotify (it starts hidden: turn it
+on in menu > "Visible widgets" > Lyrics). The current line is centred and
+highlighted and the list scrolls by itself; click a line to jump to that point
+of the song. They come from LRCLIB (lrclib.net, no account): they are only
+shown if the title, artist and duration match what's playing, so a random video
+or a live stream doesn't get the wrong lyrics. With a whole album in a single
+video ("Full Album"), it looks up its track list (Deezer or MusicBrainz) and
+shows the lyrics of the current song ("2/16 · SONG").
+
+
+PET
+---
+A pixel-art tamagotchi (it starts hidden: turn it on in menu > "Visible
+widgets" > Pet). Click the egg to adopt it: species (cat, dog, pug, cocker
+spaniel, bunny, fox, panda, penguin, frog, dragon, ghost, robot or slime),
+colors and name.
+  Looking after it . four needs (food, mood, energy and hygiene) that go down
+                     over time, also with MoonDeck closed (at half speed and
+                     never below a minimum: it never dies). Buttons Feed, Play,
+                     Clean and Sleep. It grows (baby, young, adult) with the
+                     hours it spends well looked after.
+  Reacts to the PC . it dances to music (recognised like the Lyrics widget),
+                     eats popcorn with videos, sweats if the CPU or GPU are very
+                     hot, holds a gamepad when you play, wears headphones in a
+                     Discord voice channel and falls asleep late at night.
+  Coins and shop ... every day together gives coins (more with days in a row)
+                     and so do the mini-games. Up to 400. Click the coins to
+                     open the shop: food, accessories, backgrounds and specials
+                     (ball, teddy bear, little bed, mystery box and golden and
+                     rainbow coats).
+  Backgrounds ...... the outdoor ones show your city's weather (from the weather
+                     widget): day and night by sunrise and sunset, rain, snow,
+                     storms, fog and the moon in today's phase.
+Right-click: Customize, Shop, "Pet notifications" (when it's hungry, etc.) and
+Start over.
 
 
 FPS

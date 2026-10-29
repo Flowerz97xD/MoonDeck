@@ -25,6 +25,14 @@ from idioma import _
 
 JUEGOS = (("buscaminas", "Buscaminas"), ("2048", "2048"), ("dino", "Dinosaurio"))
 
+# Quien quiera premiar las partidas (la mascota: monedas) pone aquí una función(monedas).
+AL_GANAR = None
+
+
+def _premiar(monedas):
+    if AL_GANAR and monedas > 0:
+        AL_GANAR(int(monedas))
+
 
 def crear(nombre, guardado, al_guardar):
     """guardado: dict del juego en la configuración (récords y partida); al_guardar: guarda la config."""
@@ -189,6 +197,7 @@ class Buscaminas(Juego):
 
     def _ganar(self):
         self.estado, self.fin = "ganado", time.monotonic()
+        _premiar(3 + len(self.minas) // 10)
         self.banderas = set(self.minas)
         segundos = round(self.fin - self.inicio)
         records = self.guardado.setdefault("records", {})
@@ -441,6 +450,7 @@ class Juego2048(Juego):
                     self.puntos += junta.valor
                     if junta.valor == 2048 and not self.ganado:
                         self.ganado = True
+                        _premiar(25)
                     movido = True
                 elif (nf, nc) != (f, c):
                     self.celdas[f][c] = None
@@ -450,6 +460,8 @@ class Juego2048(Juego):
         if movido:
             self._ficha_al_azar()
             self.terminado = not self._quedan_movimientos()
+            if self.terminado:
+                _premiar(min(30, self.puntos // 400))
             self.t_mov = time.monotonic()
             self._guardar()
         return movido
@@ -763,6 +775,7 @@ class Dino(Juego):
                 self.estado = "chocado"
                 self._poner_estado("CRASHED")
                 self.t_choque = time.monotonic()
+                _premiar(min(20, self.puntos() // 100))
                 if self.puntos() > self.record():
                     self.guardado["record"] = self.puntos()
                     self.al_guardar()
