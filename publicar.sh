@@ -40,4 +40,4 @@ else
     gh release create "v$VERSION" dist/publico/MoonDeck-*.zip --title "MoonDeck $VERSION" --notes "$NOTAS"
 fi
 echo
-echo "Publicada la v$VERSION. Para tus colegas (con el secreto de Discord): ./construir.sh"
+echo "Publicada la v$VERSION."

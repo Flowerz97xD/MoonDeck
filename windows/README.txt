@@ -141,26 +141,26 @@ Menu > "Settings...". Everything applies instantly:
                          colors, font and text size. "Export" / "Import" save
                          or load the theme in a .json file to share it.
   Widget options ....... the weather city, which day the calendar week starts
-                         on (Monday or Sunday), the clock type, "Keep each
-                         app's volume" (if an app like Firefox sets its own
-                         volume when the next song starts, MoonDeck puts back
-                         the one you gave it) and each pack's options
-                         (Discord, speed test, apps...).
+                         on (Monday or Sunday), the clock type and each
+                         widget's options (Discord, speed test, apps...).
   Titles and backgrounds  remove the title or background of each widget.
   Style (widgets mode and panel mode, separately): background color and
                          opacity, gradient (two colors and direction), acrylic
-                         glass on/off, background image with its opacity,
-                         border color, opacity and width, rounded corners,
+                         glass on/off, border color, opacity and width, rounded corners,
                          "Neon mode" (the border shines like a neon tube) and
                          "Flicker" (the neon fails now and then, like an old
                          tube).
                          In panel mode, also the background covering the
-                         whole screen: color, opacity and image.
+                         whole screen: color and opacity.
   Layout and size ...... save the current panel layout as the one "Reset"
                          goes back to (or back to the factory one), and save
                          the current widget positions as the ones "Rearrange
                          widgets" uses; the widget width and the columns
                          when arranging them.
+  Store ................ each extra widget (Sensors, FPS, Speed test, Discord,
+                         Apps, Games, Immich, Docker) on its own: delete the
+                         ones you don't use and download them again whenever
+                         you want.
   General .............. language, open at login, the mouse wheel, how often
                          sensors are read, and updates.
 

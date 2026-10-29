@@ -206,11 +206,6 @@ class Mezclador:
         self.error = None
         self._sesiones = {}   # nombre visible -> [sesiones pycaw]
         self._altavoz = None
-        # Volumen que el usuario puso a cada app desde MoonDeck: si la app abre una sesión
-        # nueva con otro volumen, se le vuelve a poner (como en Linux).
-        self.mantener = True
-        self.fijados = {}     # app -> (volumen de 0 a 1, cuándo se fijó)
-        self.nacidas = {}     # sesión -> cuándo la vimos por primera vez
         if not ES_WINDOWS:
             self.error = _("Solo disponible en Windows")
             return
@@ -239,7 +234,6 @@ class Mezclador:
                     continue
                 grupos.setdefault(nombre_app(proc.name()), []).append(s)
             self._sesiones = grupos
-            self._mantener_fijados(grupos)
             apps = []
             for nombre in sorted(grupos, key=str.lower):
                 v = grupos[nombre][0].SimpleAudioVolume
@@ -250,39 +244,6 @@ class Mezclador:
             self.error = _("Error del mezclador: {error}").format(error=e)
             return None
 
-    @staticmethod
-    def _id_sesion(s):
-        try:
-            return s.InstanceIdentifier
-        except Exception:  # noqa: BLE001 - versiones viejas de pycaw
-            return s.ProcessId
-
-    def _mantener_fijados(self, grupos):
-        """A las sesiones nuevas (sus primeros segundos) de una app con volumen fijado se les
-        vuelve a poner. Si después cambia (otro mezclador, la propia app), eso pasa a ser lo fijado."""
-        ahora = time.monotonic()
-        nacidas = {}
-        for ss in grupos.values():
-            for s in ss:
-                k = self._id_sesion(s)
-                nacidas[k] = self.nacidas.get(k, ahora)
-        self.nacidas = nacidas
-        for nombre, (vol, cuando) in list(self.fijados.items()):
-            for s in grupos.get(nombre, []):
-                v = s.SimpleAudioVolume
-                actual = v.GetMasterVolume()
-                if abs(actual - vol) < 0.01:
-                    continue
-                if ahora - nacidas[self._id_sesion(s)] < 5:
-                    v.SetMasterVolume(vol, None)
-                elif ahora - cuando > 3:  # (no justo después de moverlo: aún no se ha aplicado)
-                    self.fijados[nombre] = (actual, ahora)
-
-    def mantener_volumen(self, activo):
-        self.mantener = activo
-        if not activo:
-            self.fijados.clear()
-
     def volumen(self, nombre, valor):
         """nombre None = volumen general. valor de 0 a 1."""
         try:
@@ -290,8 +251,6 @@ class Mezclador:
                 if self._altavoz:
                     self._altavoz.SetMasterVolumeLevelScalar(valor, None)
             else:
-                if self.mantener:
-                    self.fijados[nombre] = (valor, time.monotonic())
                 for s in self._sesiones.get(nombre, []):
                     s.SimpleAudioVolume.SetMasterVolume(valor, None)
         except Exception as e:  # noqa: BLE001

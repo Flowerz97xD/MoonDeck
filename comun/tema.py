@@ -22,7 +22,6 @@ POR_DEFECTO = {
         "borde": "#ffffff", "borde_opacidad": 0.12, "borde_grosor": 1.0,
         "radio": 12, "cristal": True,
         "neon": False, "parpadeo": False,  # borde como un tubo de neón, y que falle a ratos
-        "imagen": "", "imagen_opacidad": 0.5,
     },
     "panel": {                     # tarjetas dentro del panel y el fondo del panel
         "fondo": "#ffffff", "opacidad": 0.055,
@@ -30,9 +29,7 @@ POR_DEFECTO = {
         "borde": "#ffffff", "borde_opacidad": 0.12, "borde_grosor": 1.0,
         "radio": 10, "cristal": True,
         "neon": False, "parpadeo": False,
-        "imagen": "", "imagen_opacidad": 0.5,
         "panel_fondo": "#0c0e12", "panel_opacidad": 0.47,
-        "panel_imagen": "", "panel_imagen_opacidad": 0.6,
     },
 }
 

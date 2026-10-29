@@ -281,6 +281,9 @@ def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL):
     fd.set_absolute_size(max(6, px * ESCALA) * Pango.SCALE)
     fd.set_weight(peso)
     lay.set_font_description(fd)
+    attrs = Pango.AttrList()
+    attrs.insert(Pango.attr_font_features_new("tnum"))  # cifras de ancho fijo: no bailan al cambiar
+    lay.set_attributes(attrs)
     lay.set_text(texto, -1)
     return lay
 
@@ -1372,6 +1375,7 @@ MAX_SENSORES = 40
 # ---------------------------------------------------------------------------
 
 CSS = """
+.hw { font-feature-settings: "tnum"; }
 window.hw, window.hw.background { background-color: transparent; background-image: none; }
 .hw scrolledwindow, .hw viewport { background-color: transparent; border: none; }
 .hw .titulo { color: #aab3c2; font-weight: bold; font-size: 10pt; letter-spacing: 1px; }
@@ -1441,35 +1445,9 @@ def css_tema(t):
     return css
 
 
-_imagenes = {}
-
-
-def imagen_cubriendo(ruta, ancho, alto):
-    """La imagen escalada para cubrir ancho x alto (recortando lo que sobre), con caché."""
-    clave = (ruta, ancho, alto)
-    if clave not in _imagenes:
-        if len(_imagenes) > 40:
-            _imagenes.clear()
-        try:
-            img = GdkPixbuf.Pixbuf.new_from_file(ruta)
-            escala = max(ancho / img.get_width(), alto / img.get_height())
-            pw, ph = max(1, round(img.get_width() * escala)), max(1, round(img.get_height() * escala))
-            img = img.scale_simple(pw, ph, GdkPixbuf.InterpType.BILINEAR)
-            _imagenes[clave] = img.new_subpixbuf((pw - ancho) // 2, (ph - alto) // 2, min(ancho, pw), min(alto, ph))
-        except (GLib.Error, ValueError, ZeroDivisionError):
-            _imagenes[clave] = None
-    return _imagenes[clave]
-
-
 def pintar_fondo(cr, p, w, h, opacidad, prefijo=""):
-    """Fondo según el tema: imagen (si hay) y encima el color o el degradado.
+    """Fondo según el tema: el color o el degradado.
     `prefijo` = "panel_" para el fondo del panel entero."""
-    imagen = p.get(prefijo + "imagen")
-    if imagen and w > 0 and h > 0:
-        pb = imagen_cubriendo(imagen, int(w), int(h))
-        if pb:
-            Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
-            cr.paint_with_alpha(p[prefijo + "imagen_opacidad"] * opacidad)
     alfa = p[prefijo + "opacidad"] * opacidad
     color = hex_rgb(p[prefijo + "fondo"])
     if not prefijo and p["degradado"]:
@@ -2450,7 +2428,7 @@ class VentanaConfig(Gtk.Window):
                ("panel", "Estilo · modo panel", "Cómo se ve el modo panel: el velo que cubre la pantalla y "
                                                 "sus tarjetas."),
                ("disposicion", "Disposición y tamaño", "Dónde se colocan los widgets y de qué tamaño."),
-               ("packs", "Packs", None),
+               ("packs", "Tienda", None),
                ("general", "General", "Idioma, arranque, lecturas y actualizaciones."))
 
     def __init__(self, app):
@@ -2554,24 +2532,6 @@ class VentanaConfig(Gtk.Window):
         sw.connect("notify::active", lambda w, _p: self.cambiar(seccion, clave, w.get_active()))
         return sw
 
-    def imagen(self, seccion, clave):
-        fila = caja(False, 6)
-        elegir = Gtk.FileChooserButton(title=_("Elegir imagen"), action=Gtk.FileChooserAction.OPEN)
-        filtro = Gtk.FileFilter()
-        filtro.set_name(_("Imágenes"))
-        filtro.add_pixbuf_formats()
-        elegir.add_filter(filtro)
-        elegir.set_width_chars(18)
-        actual = self.app.tema[seccion][clave]
-        if actual and os.path.exists(actual):
-            elegir.set_filename(actual)
-        elegir.connect("file-set", lambda b: self.cambiar(seccion, clave, b.get_filename() or ""))
-        quitar = Gtk.Button(label=_("Quitar"))
-        quitar.connect("clicked", lambda _b: (elegir.unselect_all(), self.cambiar(seccion, clave, "")))
-        fila.pack_start(elegir, False, False, 0)
-        fila.pack_start(quitar, False, False, 0)
-        return fila
-
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, cont):
@@ -2635,7 +2595,7 @@ class VentanaConfig(Gtk.Window):
         cr.set_source_rgb(0.35, 0.25, 0.4)  # algo detrás, como el fondo de pantalla
         cr.paint()
         pintar_fondo(cr, t["panel"], ancho, alto, 1.0, "panel_")
-        p = dict(t["widgets"], imagen="")
+        p = t["widgets"]
         cr.save()
         cr.translate(10, 10)
         rect_redondeado(cr, 0, 0, ancho - 20, alto - 20, min(p["radio"], 10))
@@ -2704,13 +2664,6 @@ class VentanaConfig(Gtk.Window):
             (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
-        lista = self.grupo(cont, "Multimedia")
-        sw = Gtk.Switch(active=app.config.get("mantener_volumen", True))
-        sw.connect("notify::active", lambda w, _p: app.cambiar_mantener_volumen(w.get_active()))
-        self.fila(lista, "Mantener el volumen de cada app", sw,
-                  "Si cambias el volumen de una app aquí y ella pone otro al empezar otra canción "
-                  "(Firefox lo hace), MoonDeck vuelve a poner el tuyo.")
-
         packs.llamar(app.packs, "ajustes", self, cont)
 
     def pagina_titulos(self, cont):
@@ -2738,10 +2691,6 @@ class VentanaConfig(Gtk.Window):
         self.fila(lista, "Dirección del degradado", self.deslizador(seccion, "angulo", 0, 360, 1, "°"))
         self.fila(lista, "Desenfoque (cristal)", self.interruptor(seccion, "cristal"),
                   _("Desenfoca lo que hay detrás") + (_(" de las tarjetas") if seccion == "widgets" else _(" del panel")))
-        lista = self.grupo(cont, "Imagen de fondo", "Se ve debajo del color: baja la opacidad del fondo para "
-                                                   "que se vea más.")
-        self.fila(lista, "Imagen", self.imagen(seccion, "imagen"))
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(seccion, "imagen_opacidad", 0, 100, 100))
         lista = self.grupo(cont, "Borde y esquinas")
         self.fila(lista, "Color del borde", self.color(seccion, "borde"))
         self.fila(lista, "Opacidad del borde", self.deslizador(seccion, "borde_opacidad", 0, 100, 100))
@@ -2761,8 +2710,6 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
-        self.fila(lista, "Imagen", self.imagen(s, "panel_imagen"), "Una foto o un fondo para todo el panel")
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "panel_imagen_opacidad", 0, 100, 100))
         self.pagina_tarjetas(cont, s)
 
     def numero(self, clave, minimo, maximo, paso, digitos, fn):
@@ -2821,11 +2768,11 @@ class VentanaConfig(Gtk.Window):
         self.construir()
 
     def pagina_packs(self, cont):
-        """Los packs de widgets: borrar los que no se usan y volver a descargarlos de GitHub."""
+        """La tienda: borrar los widgets que no se usan y volver a descargarlos de GitHub."""
         app = self.app
         g = app.gestor_packs
-        lista = self.grupo(cont, "Packs de widgets", "Borra los que no uses; puedes volver a descargarlos de "
-                                                     "GitHub cuando quieras. Se aplica al reiniciar MoonDeck.")
+        lista = self.grupo(cont, "Widgets", "Instala solo los que uses: bórralos cuando quieras y vuelve a "
+                                             "descargarlos de GitHub. Se aplica al reiniciar MoonDeck.")
         for ident, nombre, texto, widgets, _x in packs.CATALOGO:
             if not packs.borrable(ident):
                 control = Gtk.Label(label=_("Incluido"))
@@ -2842,7 +2789,8 @@ class VentanaConfig(Gtk.Window):
                 control = Gtk.Button(label=_("Descargar"), sensitive=not g.ocupado)
                 control.get_style_context().add_class("suggested-action")
                 control.connect("clicked", lambda _b, i=ident: self.descargar_pack(i))
-            self.fila(lista, nombre, control, _(texto) + "\n" + " · ".join(_(w) for w in widgets))
+            self.fila(lista, nombre, control, _(texto) + ("" if widgets == (nombre,) else
+                                                      "\n" + " · ".join(_(w) for w in widgets)))
         aviso = (_("No se pudo descargar: {error}").format(error=g.error) if g.estado == "error" else
                  _("Reinicia MoonDeck para ver los cambios.") if g.cambiado else "")
         if aviso:
@@ -2999,7 +2947,7 @@ class VentanaConfig(Gtk.Window):
 # ---------------------------------------------------------------------------
 
 # Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
-PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
+PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log, CONFIG)
 
 
 class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
@@ -3038,7 +2986,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.areas = {}      # monitor -> (ancho, alto) del área libre
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
-        self.mezclador.mantener_volumen(self.config.get("mantener_volumen", True))
         self.dispositivos = Dispositivos()
         self.escritorios = Escritorios()
         self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
@@ -4000,11 +3947,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True)
         self.guardar_config()
-
-    def cambiar_mantener_volumen(self, activo):
-        self.config["mantener_volumen"] = activo
-        self.guardar_config()
-        self.mezclador.mantener_volumen(activo)
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

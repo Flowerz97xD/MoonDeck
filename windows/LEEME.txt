@@ -140,25 +140,26 @@ Menu > "Configuracion...". Todo se aplica al momento:
                          "Exportar" / "Importar" guardan o cargan el tema en un
                          archivo .json para compartirlo.
   Opciones de widgets .. la ciudad del tiempo, en que dia empieza la semana del
-                         calendario (lunes o domingo), el tipo de reloj,
-                         "Mantener el volumen de cada app" (si una app como
-                         Firefox se pone su volumen al empezar otra cancion,
-                         MoonDeck vuelve a poner el que le diste) y lo de cada
-                         pack (Discord, test de velocidad, aplicaciones...).
+                         calendario (lunes o domingo), el tipo de reloj y lo
+                         de cada widget (Discord, test de velocidad,
+                         aplicaciones...).
   Titulos y fondos ..... quitar el titulo o el fondo a cada widget.
   Estilo (modo widgets y modo panel, por separado): color y opacidad del
                          fondo, degradado (dos colores y direccion), cristal
-                         acrilico si/no, imagen de fondo con su opacidad, color,
-                         opacidad y grosor del borde, esquinas redondeadas,
+                         acrilico si/no, color, opacidad y grosor del borde, esquinas redondeadas,
                          "Modo neon" (el borde brilla como un tubo de neon) y
                          "Parpadeo" (el neon falla a ratos, como un tubo viejo).
                          En el modo panel, ademas, el fondo que cubre toda la
-                         pantalla: color, opacidad e imagen.
+                         pantalla: color y opacidad.
   Disposicion y tamano . guardar la disposicion actual del panel como la de
                          "Restablecer" (o volver a la de fabrica), y guardar las
                          posiciones actuales de los widgets como las de
                          "Recolocar widgets"; el ancho de los widgets y las
                          columnas al colocarlos.
+  Tienda ............... cada widget extra (Sensores, FPS, Test de velocidad,
+                         Discord, Aplicaciones, Juegos, Immich, Docker) por
+                         separado: borra los que no uses y vuelve a
+                         descargarlos cuando quieras.
   General .............. idioma, abrir al iniciar sesion, la rueda del raton,
                          cada cuanto se leen los sensores y actualizaciones.
 

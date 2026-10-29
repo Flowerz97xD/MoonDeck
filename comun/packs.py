@@ -1,7 +1,7 @@
 """Packs de widgets: MoonDeck trae el pack Básico; los demás se pueden borrar y volver a descargar.
 
 Cada pack es un archivo pack_<id>.py (uno para Linux y otro para Windows, cada cual en su
-carpeta) más los módulos compartidos que solo usa él. Todo va suelto en la carpeta de la app,
+carpeta) más los módulos compartidos que usa (solo los de los packs). Todo va suelto en la carpeta de la app,
 como el resto: así un actualizador viejo también los copia.
 
 Un pack_<id>.py puede definir:
@@ -40,23 +40,32 @@ from idioma import _
 AGENTE = f"MoonDeck/{VERSION}"
 ZIPS = {"linux": "MoonDeck-Linux.zip", "win32": "MoonDeck-Windows.zip"}
 
-# (id, nombre, descripción, widgets que trae, módulos compartidos que solo usa él)
-CATALOGO = (
+# (id, nombre, descripción, widgets que trae, módulos compartidos que solo usan los packs)
+# Un widget por pack (salvo el Básico): así cada cual instala solo lo que usa.
+CATALOGO = tuple(p for p in (
     ("basico", "Básico", "Lo esencial. Viene con MoonDeck y no se puede borrar.",
      ("CPU", "GPU", "Memoria", "Almacenamiento", "Red", "Reloj", "Calendario", "Tiempo", "Multimedia",
       "Dispositivos de audio"), ()),
-    ("hardware", "Hardware", "Más datos del equipo y de la conexión.",
-     ("Sensores", "FPS", "Test de velocidad") if sys.platform == "win32" else ("Sensores", "Test de velocidad"),
-     ("velocidad.py",)),
+    ("sensores", "Sensores", "Temperaturas, ventiladores y demás sensores del equipo, los que elijas.",
+     ("Sensores",), ()),
+    ("fps", "FPS", "Los FPS del juego o la app 3D que tengas abiertos (con PresentMon).",
+     ("FPS",), ()) if sys.platform == "win32" else None,
+    ("velocidad", "Test de velocidad", "Mide el ping, la bajada y la subida de tu conexión.",
+     ("Test de velocidad",), ("velocidad.py",)),
     ("discord", "Discord", "El canal de voz en el que estás, con los que hablan y sus volúmenes.",
      ("Discord",), ("discord_voz.py",)),
-    ("escritorio", "Escritorio", "Un lanzador con tus aplicaciones.",
+    ("escritorio", "Aplicaciones", "Un lanzador con tus aplicaciones.",
      ("Aplicaciones",), ("lanzador.py",)),
-    ("ocio", "Ocio", "Minijuegos para los ratos muertos.",
+    ("ocio", "Juegos", "Minijuegos para los ratos muertos.",
      ("Juegos",), ("juegos.py", "dino_sprite.py")),
-    ("servidor", "Servidor", "Para quien tiene un servidor en casa: Immich y contenedores de Docker.",
-     ("Immich", "Docker"), ("immich.py", "contenedores.py")),
-)
+    ("immich", "Immich", "Tu servidor de fotos Immich: espacio, biblioteca, tareas y la IA.",
+     ("Immich",), ("immich.py", "contenedores.py")),
+    ("docker", "Docker", "Tus contenedores de Docker: su estado, pararlos y arrancarlos.",
+     ("Docker",), ("contenedores.py",)),
+) if p)
+
+# Los packs de antes (1.4.6–1.4.10) traían varios widgets: en qué se han partido.
+PARTIDOS = {"hardware": ("sensores", "fps", "velocidad"), "servidor": ("immich", "docker")}
 
 
 def info(ident):
@@ -76,16 +85,44 @@ def instalado(carpeta, ident):
 
 
 def omitidos(borrados):
-    """Archivos que no hay que copiar al actualizar: los de los packs que el usuario borró."""
-    return {n for ident in borrados if any(p[0] == ident for p in CATALOGO) and borrable(ident)
-            for n in archivos(ident)}
+    """Archivos que no hay que copiar al actualizar: los de los packs que el usuario borró
+    (menos los módulos que también usa otro pack que sí tiene)."""
+    borrados = {i for i in borrados if any(p[0] == i for p in CATALOGO) and borrable(i)}
+    usados = {n for p in CATALOGO if p[0] not in borrados for n in archivos(p[0])}
+    return {n for ident in borrados for n in archivos(ident)} - usados
 
 
-def cargar(carpeta, log=print):
+def migrar(carpeta, ruta_config):
+    """Pasa los packs borrados de antes a los de ahora y quita los pack_*.py que ya no existen.
+    Devuelve los ids borrados (para no cargarlos aunque un actualizador viejo copiara sus archivos)."""
+    try:
+        with open(ruta_config, encoding="utf-8") as f:
+            config = json.load(f)
+    except (OSError, ValueError):
+        config = {}
+    borrados = config.get("packs_borrados", [])
+    if any(i in PARTIDOS for i in borrados):
+        borrados = list(dict.fromkeys(n for i in borrados for n in PARTIDOS.get(i, (i,))))
+        config["packs_borrados"] = borrados
+        try:
+            with open(ruta_config, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+    for viejo in PARTIDOS:
+        try:
+            os.remove(os.path.join(carpeta, f"pack_{viejo}.py"))
+        except OSError:
+            pass
+    return set(borrados)
+
+
+def cargar(carpeta, log=print, ruta_config=None):
     """Importa los pack_<id>.py que haya. Uno roto no impide arrancar: se apunta y se salta."""
+    borrados = migrar(carpeta, ruta_config) if ruta_config else set()
     cargados = []
     for ident, *_resto in CATALOGO:
-        if not borrable(ident) or not instalado(carpeta, ident):
+        if not borrable(ident) or ident in borrados or not instalado(carpeta, ident):
             continue
         try:
             cargados.append(importlib.import_module(f"pack_{ident}"))
@@ -129,7 +166,7 @@ class Gestor:
         return self._hilo is not None and self._hilo.is_alive()
 
     def instalado(self, ident):
-        return instalado(self.carpeta, ident)
+        return instalado(self.carpeta, ident) and ident not in self.config.get("packs_borrados", [])
 
     def _apuntar(self, ident, borrado):
         lista = [i for i in self.config.get("packs_borrados", []) if i != ident]
@@ -141,7 +178,9 @@ class Gestor:
     def borrar(self, ident):
         if not borrable(ident) or self.desde_codigo or self.ocupado:
             return
-        for n in archivos(ident):
+        # Los módulos compartidos se quedan si otro pack instalado los usa (contenedores.py).
+        usados = {n for p in CATALOGO if p[0] != ident and self.instalado(p[0]) for n in archivos(p[0])}
+        for n in set(archivos(ident)) - usados:
             ruta = os.path.join(self.carpeta, n)
             if os.path.isfile(ruta):
                 os.remove(ruta)

@@ -183,36 +183,10 @@ def tema_claro():
     return SOMBRA < 40  # texto oscuro: fondo claro
 
 
-_imagenes = {}
-
-
-def imagen_cubriendo(ruta, ancho, alto):
-    """La imagen escalada para cubrir ancho x alto (recortando lo que sobre), con caché."""
-    clave = (ruta, ancho, alto)
-    if clave not in _imagenes:
-        if len(_imagenes) > 40:
-            _imagenes.clear()
-        img = QPixmap(ruta)
-        if img.isNull() or ancho < 1 or alto < 1:
-            _imagenes[clave] = None
-        else:
-            img = img.scaled(ancho, alto, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            _imagenes[clave] = img.copy((img.width() - ancho) // 2, (img.height() - alto) // 2, ancho, alto)
-    return _imagenes[clave]
-
-
 def pintar_fondo(p, perfil, rect, opacidad, prefijo="", solo_extras=False):
-    """Fondo según el tema: imagen (si hay) y encima el color o el degradado.
+    """Fondo según el tema: el color o el degradado.
     `prefijo` = "panel_" para el fondo del panel entero. Con `solo_extras` (el
-    acrílico ya pone el color) solo se pinta la imagen y el degradado."""
-    imagen = perfil.get(prefijo + "imagen")
-    if imagen:
-        img = imagen_cubriendo(imagen, int(rect.width()), int(rect.height()))
-        if img:
-            p.save()
-            p.setOpacity(perfil[prefijo + "imagen_opacidad"] * opacidad)
-            p.drawPixmap(rect.topLeft(), img)
-            p.restore()
+    acrílico ya pone el color) solo se pinta el degradado."""
     alfa = round(perfil[prefijo + "opacidad"] * opacidad * 255)
     color = QColor(perfil[prefijo + "fondo"])
     if not prefijo and perfil["degradado"]:
@@ -2120,7 +2094,7 @@ class VentanaPanel(QWidget):
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # El fondo del tema (color, opacidad, imagen) encima del cristal.
+        # El fondo del tema (color, opacidad) encima del cristal.
         pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
         if self.editando:
             # Celdas de la cuadrícula (se ven en los huecos y al mover un widget).
@@ -2487,7 +2461,7 @@ class MuestraTema(QWidget):
         p.setClipPath(ruta)
         p.fillRect(r, QColor(90, 64, 102))  # algo detrás, como el fondo de pantalla
         pintar_fondo(p, t["panel"], r, 1.0, "panel_")
-        w = dict(t["widgets"], imagen="")
+        w = t["widgets"]
         tarjeta = r.adjusted(10, 10, -10, -10)
         radio = min(w["radio"], 10)
         ruta = QPainterPath()
@@ -2523,7 +2497,7 @@ class VentanaConfig(QWidget):
                ("panel", "Estilo · modo panel", "Cómo se ve el modo panel: el velo que cubre la pantalla y "
                                                 "sus tarjetas."),
                ("disposicion", "Disposición y tamaño", "Dónde se colocan los widgets y de qué tamaño."),
-               ("packs", "Packs", None),
+               ("packs", "Tienda", None),
                ("general", "General", "Idioma, arranque, lecturas y actualizaciones."))
     ESTILO = ESTILO_DIALOGO + """
     QWidget#raiz { background: #1b1e25; }
@@ -2679,26 +2653,6 @@ class VentanaConfig(QWidget):
         c.toggled.connect(lambda v: self.cambiar(seccion, clave, v))
         return c
 
-    def imagen(self, seccion, clave):
-        fila = QHBoxLayout()
-        nombre = QLabel(os.path.basename(self.app.tema[seccion][clave]) or _("(ninguna)"))
-        nombre.setObjectName("sub")
-        nombre.setFixedWidth(150)
-        elegir = QPushButton(_("Elegir…"))
-        quitar = QPushButton(_("Quitar"))
-
-        def abrir():
-            ruta, _x = QFileDialog.getOpenFileName(self, _("Elegir imagen"), os.path.expanduser("~"),
-                                                  _("Imágenes (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"))
-            if ruta:
-                self.cambiar(seccion, clave, ruta)
-                nombre.setText(os.path.basename(ruta))
-        elegir.clicked.connect(abrir)
-        quitar.clicked.connect(lambda: (self.cambiar(seccion, clave, ""), nombre.setText(_("(ninguna)"))))
-        for w in (nombre, elegir, quitar):
-            fila.addWidget(w)
-        return fila
-
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, caja):
@@ -2809,14 +2763,6 @@ class VentanaConfig(QWidget):
         nixie.clicked.connect(elegir_nixie)
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
-        lista = self.grupo(caja, "Multimedia")
-        c = QCheckBox()
-        c.setChecked(app.config.get("mantener_volumen", True))
-        c.toggled.connect(app.cambiar_mantener_volumen)
-        self.fila(lista, "Mantener el volumen de cada app", c,
-                  "Si cambias el volumen de una app aquí y ella pone otro al empezar otra canción "
-                  "(Firefox lo hace), MoonDeck vuelve a poner el tuyo.")
-
         packs.llamar(app.packs, "ajustes", self, caja)
 
     def pagina_titulos(self, caja):
@@ -2847,10 +2793,6 @@ class VentanaConfig(QWidget):
         self.fila(lista, "Dirección del degradado", self.deslizador(s, "angulo", 0, 360, 1, "°"))
         self.fila(lista, "Cristal acrílico", self.interruptor(s, "cristal"),
                   _("Desenfoca lo que hay detrás") + (_(" de las tarjetas") if s == "widgets" else _(" del panel")))
-        lista = self.grupo(caja, "Imagen de fondo", "Se ve debajo del color: baja la opacidad del fondo para "
-                                                    "que se vea más.")
-        self.fila(lista, "Imagen", self.imagen(s, "imagen"))
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "imagen_opacidad", 0, 100, 100))
         lista = self.grupo(caja, "Borde y esquinas")
         self.fila(lista, "Color del borde", self.color(s, "borde"))
         self.fila(lista, "Opacidad del borde", self.deslizador(s, "borde_opacidad", 0, 100, 100))
@@ -2870,8 +2812,6 @@ class VentanaConfig(QWidget):
         lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
-        self.fila(lista, "Imagen", self.imagen(s, "panel_imagen"), "Una foto o un fondo para todo el panel")
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "panel_imagen_opacidad", 0, 100, 100))
         self.pagina_tarjetas(caja, s)
 
     def pagina_disposicion(self, caja):
@@ -2928,11 +2868,11 @@ class VentanaConfig(QWidget):
         self.construir()
 
     def pagina_packs(self, caja):
-        """Los packs de widgets: borrar los que no se usan y volver a descargarlos de GitHub."""
+        """La tienda: borrar los widgets que no se usan y volver a descargarlos de GitHub."""
         app = self.app
         g = app.gestor_packs
-        lista = self.grupo(caja, "Packs de widgets", "Borra los que no uses; puedes volver a descargarlos de "
-                                                     "GitHub cuando quieras. Se aplica al reiniciar MoonDeck.")
+        lista = self.grupo(caja, "Widgets", "Instala solo los que uses: bórralos cuando quieras y vuelve a "
+                                             "descargarlos de GitHub. Se aplica al reiniciar MoonDeck.")
         for ident, nombre, texto, widgets, _x in packs.CATALOGO:
             if not packs.borrable(ident):
                 control = QLabel(_("Incluido"))
@@ -2951,7 +2891,8 @@ class VentanaConfig(QWidget):
                 control.setObjectName("aceptar")
                 control.setEnabled(not g.ocupado)
                 control.clicked.connect(lambda _x=False, i=ident: self.descargar_pack(i))
-            self.fila(lista, nombre, control, _(texto) + "\n" + " · ".join(_(w) for w in widgets))
+            self.fila(lista, nombre, control, _(texto) + ("" if widgets == (nombre,) else
+                                                      "\n" + " · ".join(_(w) for w in widgets)))
         aviso = (_("No se pudo descargar: {error}").format(error=g.error) if g.estado == "error" else
                  _("Reinicia MoonDeck para ver los cambios.") if g.cambiado else "")
         if aviso:
@@ -3102,7 +3043,7 @@ class VentanaConfig(QWidget):
 
 
 # Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
-PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
+PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log, CONFIG)
 
 
 class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
@@ -3149,7 +3090,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.manual = False  # True cuando el usuario arrastra un widget
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
-        self.mezclador.mantener_volumen(self.config.get("mantener_volumen", True))
         self.dispositivos = Dispositivos()
         log("Mezclador:", "OK" if self.mezclador.ok else self.mezclador.error,
             "| dispositivos:", "OK" if self.dispositivos.ok else self.dispositivos.error)
@@ -4088,11 +4028,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True, pantalla=self.pantalla_guardada())
         self.guardar_config()
-
-    def cambiar_mantener_volumen(self, activo):
-        self.config["mantener_volumen"] = activo
-        self.guardar_config()
-        self.mezclador.mantener_volumen(activo)
 
     def cambiar_intervalo(self, valor):
         global INTERVALO
