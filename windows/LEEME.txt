@@ -140,9 +140,10 @@ Menu > "Configuracion...". Todo se aplica al momento:
                          "Exportar" / "Importar" guardan o cargan el tema en un
                          archivo .json para compartirlo.
   Opciones de widgets .. la ciudad del tiempo, en que dia empieza la semana del
-                         calendario (lunes o domingo), el tipo de reloj y lo
-                         de cada widget (Discord, test de velocidad,
-                         aplicaciones...).
+                         calendario (lunes o domingo), el tipo de reloj, el
+                         programa del teclado para su modo musica (ver
+                         Dispositivos de audio) y lo de cada widget (Discord,
+                         test de velocidad, aplicaciones...).
   Titulos y fondos ..... quitar el titulo o el fondo a cada widget.
   Estilo (modo widgets y modo panel, por separado): color y opacidad del
                          fondo, degradado (dos colores y direccion), cristal
@@ -227,6 +228,13 @@ RELOJ, CALENDARIO, AUDIO Y VELOCIDAD
                      todos los microfonos predeterminados de Windows (el de
                      multimedia y el de comunicaciones, que usan Discord,
                      Teams o los juegos, pueden ser distintos).
+                     Interruptor teclado / notas: el modo musica de los LED
+                     del teclado, para teclados cuyo programa lo hace mientras
+                     esta abierto (LEOBOG ONE y parecidos). Abre el programa y
+                     lo deja en los iconos ocultos, o lo cierra. Activa el modo
+                     musica una vez en el programa; el programa se elige en
+                     Configuracion > Opciones de widgets (LEOBOG ONE se
+                     detecta solo).
   Test de velocidad  un velocimetro como el de un coche; boton "Iniciar test":
                      mide ping, bajada y subida en unos 15 s contra los
                      servidores de Cloudflare (los de speed.cloudflare.com).
@@ -295,6 +303,47 @@ visibles" > Juegos). Clic derecho > "Juego" para elegir y "Nueva partida".
                      (mantener = mas alto) y flecha abajo para agacharse.
 Para usar el teclado, haz clic antes en el juego. Para el menu del widget, haz
 clic derecho fuera del tablero (por ejemplo en el titulo).
+
+
+LETRAS
+------
+La letra de lo que suena, sincronizada como en Spotify (llega oculto: activalo
+en menu > "Widgets visibles" > Letras). La frase que suena va en el centro,
+resaltada, y la lista se desliza sola; clic en una frase para saltar a ese
+momento de la cancion. Sale de LRCLIB (lrclib.net, sin cuenta): solo se
+muestra si el titulo, el artista y la duracion casan con lo que suena, asi un
+video cualquiera o un directo no ensenan una letra que no es. Con un disco
+entero en un solo video ("Album completo"), busca su lista de canciones
+(Deezer o MusicBrainz) y pone la de la cancion que toca ("2/16 - CANCION").
+
+
+MASCOTA
+-------
+Un tamagotchi en pixel art (llega oculto: activalo en menu > "Widgets
+visibles" > Mascota). Haz clic en el huevo para adoptarla: especie (gato,
+perro, carlino, cocker spaniel, conejo, zorro, panda, pinguino, rana, dragon,
+fantasma, robot o slime), colores y nombre.
+  Cuidarla ......... cuatro necesidades (comida, animo, energia e higiene) que
+                     bajan con el tiempo, tambien con MoonDeck cerrado (a la
+                     mitad y sin bajar de un minimo: nunca muere). Botones
+                     Comer, Jugar, Limpiar y Dormir. Crece (bebe, joven,
+                     adulta) con las horas que pasa bien cuidada.
+  Reacciona al PC .. baila con la musica (la reconoce como el widget Letras),
+                     come palomitas con los videos, suda si la CPU o la GPU van
+                     muy calientes, saca un mando si juegas, se pone los
+                     auriculares en un canal de voz de Discord y de madrugada
+                     se duerme sola.
+  Monedas y tienda . cada dia que pasais juntos da monedas (mas con dias
+                     seguidos) y los minijuegos tambien. Caben 400. Clic en las
+                     monedas para abrir la tienda: comida, complementos, fondos
+                     y especiales (pelota, peluche, camita, caja sorpresa y
+                     pelajes dorado y arcoiris).
+  Fondos ........... los de fuera muestran el tiempo de tu ciudad (el del
+                     widget del tiempo): dia y noche por la salida y la puesta
+                     del sol, lluvia, nieve, tormenta, niebla y la luna en su
+                     fase de hoy.
+Clic derecho: Personalizar, Tienda, "Avisos de la mascota" (notificaciones si
+tiene hambre, etc.) y Empezar de nuevo.
 
 
 FPS
