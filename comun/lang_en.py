@@ -196,6 +196,7 @@ TEXTOS = {
     'Micrófono desactivado': 'Microphone off',
     'Ensordecido': 'Deafened',
     'Cancelar': 'Cancel',
+    'Cerrar': 'Close',
     'Conectar': 'Connect',
     'Discord solo deja controlar la voz a aplicaciones registradas. Crea la tuya (gratis, una sola vez, unos 3 minutos):': 'Discord only lets registered applications control voice. Create yours (free, only once, about 3 minutes):',
     'Abre <b>discord.com/developers</b> y pulsa <b>New Application</b> (el nombre da igual).': 'Open <b>discord.com/developers</b> and press <b>New Application</b> (any name works).',

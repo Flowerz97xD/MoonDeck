@@ -196,6 +196,7 @@ TEXTOS = {
     'Micrófono desactivado': '麦克风已关闭',
     'Ensordecido': '已屏蔽声音',
     'Cancelar': '取消',
+    'Cerrar': '关闭',
     'Conectar': '连接',
     'Discord solo deja controlar la voz a aplicaciones registradas. Crea la tuya (gratis, una sola vez, unos 3 minutos):': 'Discord 只允许已注册的应用控制语音。创建你自己的应用（免费，只需一次，大约 3 分钟）：',
     'Abre <b>discord.com/developers</b> y pulsa <b>New Application</b> (el nombre da igual).': '打开 <b>discord.com/developers</b>，点击 <b>New Application</b>（名字随意）。',

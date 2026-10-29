@@ -128,7 +128,7 @@ class Reproductores:
             lista.append({
                 "id": destino, "app": nombre_app(identidad), "titulo": titulo or _("(sin título)"),
                 "artista": artista, "reproduciendo": estado == "Playing",
-                "pos": pos, "dur": dur, "portada": portada,
+                "pos": pos, "dur": dur, "portada": portada, "momento": time.monotonic(),  # de cuándo es "pos"
                 "anterior": bool(puede and props.get("CanGoPrevious", False)),
                 "siguiente": bool(puede and props.get("CanGoNext", False)),
                 "play_pausa": bool(puede and (props.get("CanPlay", False) or props.get("CanPause", False))),

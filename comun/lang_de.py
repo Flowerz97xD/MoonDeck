@@ -196,6 +196,7 @@ TEXTOS = {
     'Micrófono desactivado': 'Mikrofon aus',
     'Ensordecido': 'Taub geschaltet',
     'Cancelar': 'Abbrechen',
+    'Cerrar': 'Schließen',
     'Conectar': 'Verbinden',
     'Discord solo deja controlar la voz a aplicaciones registradas. Crea la tuya (gratis, una sola vez, unos 3 minutos):': 'Discord lässt nur registrierte Anwendungen die Sprache steuern. Erstelle deine eigene (kostenlos, nur einmal, etwa 3 Minuten):',
     'Abre <b>discord.com/developers</b> y pulsa <b>New Application</b> (el nombre da igual).': 'Öffne <b>discord.com/developers</b> und klicke auf <b>New Application</b> (der Name ist egal).',
