@@ -731,4 +731,8 @@ TEXTOS = {
     'Las monedas se ganan cada día que pasáis juntos y en los minijuegos (widget Juegos).': '每天一起度过和玩小游戏（游戏小部件）都能获得金币。',
     'La letra de lo que suena, sincronizada como en Spotify (también con discos enteros).': '正在播放内容的歌词，像 Spotify 一样同步（整张专辑也可以）。',
     'Una mascota en pixel art que cuidar, que reacciona a lo que pasa en tu PC.': '一只需要照顾的像素风宠物，会对你电脑上发生的事做出反应。',
+    'Clic para ver las opciones de este widget': '点击查看此小部件的选项',
+    '¡Purrr…!': '呼噜噜…！',
+    '¡Guau!': '汪！',
+    '¡Qué gustito!': '好舒服呀！',
 }

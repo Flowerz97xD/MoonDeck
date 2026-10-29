@@ -731,4 +731,8 @@ TEXTOS = {
     'Las monedas se ganan cada día que pasáis juntos y en los minijuegos (widget Juegos).': 'Münzen bekommst du für jeden gemeinsamen Tag und in den Minispielen (Widget Spiele).',
     'La letra de lo que suena, sincronizada como en Spotify (también con discos enteros).': 'Der Songtext zu dem, was läuft, synchronisiert wie bei Spotify (auch bei ganzen Alben).',
     'Una mascota en pixel art que cuidar, que reacciona a lo que pasa en tu PC.': 'Ein Pixel-Art-Haustier zum Umsorgen, das auf das reagiert, was auf deinem PC passiert.',
+    'Clic para ver las opciones de este widget': 'Klicken für die Optionen dieses Widgets',
+    '¡Purrr…!': 'Schnurr…!',
+    '¡Guau!': 'Wuff!',
+    '¡Qué gustito!': 'Wie schön!',
 }

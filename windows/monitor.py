@@ -1373,6 +1373,7 @@ class Tarjeta(QWidget):
         self._pendiente = None    # la última posición del ratón aún sin aplicar al arrastre
         self._t_arrastre = QTimer(self, singleShot=True, interval=16)
         self._t_arrastre.timeout.connect(self._arrastrar)
+        self._pulsado_titulo = None  # dónde se pulsó el título (clic = menú, arrastre = mover)
         self.brillo = 1.0         # del neón (baja cuando parpadea)
         self._secuencia = []
         self._siguiente = time.monotonic() + random.uniform(1, 8)
@@ -1605,7 +1606,18 @@ class Tarjeta(QWidget):
     def en_asa(self, pos):
         return pos.x() > self.width() - self.ASA and pos.y() > self.height() - self.ASA
 
+    def en_titulo(self, pos):
+        t = self.lb_titulo
+        return t.isVisible() and t.rect().contains(t.mapFrom(self, pos))
+
     def mouseMoveEvent(self, e):
+        if self._pulsado_titulo is not None:
+            # Se arrastra desde el título: ya no es un clic, se mueve la ventana como siempre
+            if (e.position().toPoint() - self._pulsado_titulo).manhattanLength() > QApplication.startDragDistance():
+                self._pulsado_titulo = None
+                if self.ventana:
+                    self._mover_ventana()
+            return
         if not self.en_edicion():
             return
         pos = e.position().toPoint()
@@ -1627,6 +1639,12 @@ class Tarjeta(QWidget):
             self.app.panel.arrastre_tam(self, pos)
 
     def mouseReleaseEvent(self, e):
+        if self._pulsado_titulo is not None:  # un clic en el título: las opciones del widget
+            self._pulsado_titulo = None
+            menu = self.app.menu_titulo(self)
+            if menu:
+                menu.exec(self.lb_titulo.mapToGlobal(self.lb_titulo.rect().bottomLeft()))
+            return
         self._t_arrastre.stop()
         self._pendiente = e.globalPosition().toPoint()
         self._arrastrar()
@@ -1641,18 +1659,24 @@ class Tarjeta(QWidget):
         if not self.app.rueda(e):
             e.ignore()
 
+    def _mover_ventana(self):
+        if self.app.modo == "widgets":
+            # Ya no se recolocan solos (tampoco al reiniciar) hasta "Recolocar widgets".
+            self.app.manual = True
+            self.app.config["manual"] = True
+        self.ventana.windowHandle().startSystemMove()
+
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton and self.en_edicion():
             self._agarre = e.position().toPoint()
             self._arrastre = "tam" if self.en_asa(self._agarre) else "mover"
             if self._arrastre == "mover":
                 self.raise_()
+        elif (e.button() == Qt.LeftButton and self.en_titulo(e.position().toPoint())
+              and self.lb_titulo.cursor().shape() == Qt.PointingHandCursor):
+            self._pulsado_titulo = e.position().toPoint()  # clic (menú) o arrastre (mover): se ve al soltar
         elif e.button() == Qt.LeftButton and self.ventana:
-            if self.app.modo == "widgets":
-                # Ya no se recolocan solos (tampoco al reiniciar) hasta "Recolocar widgets".
-                self.app.manual = True
-                self.app.config["manual"] = True
-            self.ventana.windowHandle().startSystemMove()
+            self._mover_ventana()
         elif e.button() == Qt.RightButton:
             self.app.menu_tarjeta(self).popup(e.globalPosition().toPoint())
 
@@ -3243,6 +3267,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         for t in self.tarjetas:
             t.set_opacidad(self.config["opacidad"].get(t.clave, 1.0))
         self.poner_titulos()
+        self.marcar_titulos()
         self.panel = None
         self.aplicar_modo(inicio=True)
         self.colocado = True
@@ -3733,17 +3758,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a.setCheckable(True)
                 a.setChecked(sc is elegida)
 
-    def menu_tarjeta(self, tarjeta):
-        """Menú del clic derecho: opacidad de ese widget, sacar/devolver y lo general."""
-        menu = QMenu()
-        sub = menu.addMenu(_("Opacidad de este widget"))
-        for nivel in OPACIDADES:
-            accion = sub.addAction(f"{nivel} %", lambda _=False, v=nivel / 100: self.cambiar_opacidad([tarjeta], v))
-            accion.setCheckable(True)
-            accion.setChecked(round(tarjeta.opacidad * 100) == nivel)
-        sub.addSeparator()
-        sub.addAction(_("Aplicar a todos los widgets"),
-                      lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
+    def opciones_tarjeta(self, tarjeta, menu):
+        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
+        es lo que sale al pulsar su título."""
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
         if tarjeta.clave == "calendario":
@@ -3758,6 +3775,34 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
+
+    def menu_titulo(self, tarjeta):
+        """El menú del título: solo las opciones de ese widget, o None si no tiene."""
+        menu = QMenu()
+        self.opciones_tarjeta(tarjeta, menu)
+        while menu.actions() and menu.actions()[-1].isSeparator():
+            menu.removeAction(menu.actions()[-1])
+        return menu if menu.actions() else None
+
+    def marcar_titulos(self):
+        """En los widgets con opciones, el título se puede pulsar: manita y una pista al pasar."""
+        for t in self.tarjetas:
+            if self.menu_titulo(t):
+                t.lb_titulo.setCursor(Qt.PointingHandCursor)
+                t.lb_titulo.setToolTip(_("Clic para ver las opciones de este widget"))
+
+    def menu_tarjeta(self, tarjeta):
+        """Menú del clic derecho: opacidad de ese widget, sacar/devolver y lo general."""
+        menu = QMenu()
+        sub = menu.addMenu(_("Opacidad de este widget"))
+        for nivel in OPACIDADES:
+            accion = sub.addAction(f"{nivel} %", lambda _=False, v=nivel / 100: self.cambiar_opacidad([tarjeta], v))
+            accion.setCheckable(True)
+            accion.setChecked(round(tarjeta.opacidad * 100) == nivel)
+        sub.addSeparator()
+        sub.addAction(_("Aplicar a todos los widgets"),
+                      lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
+        self.opciones_tarjeta(tarjeta, menu)
         if self.modo == "panel" and not tarjeta.ventana and tarjeta.clave in self.panel.celdas:
             _x, _x, alto, ancho = self.panel.celdas[tarjeta.clave]
             sub = menu.addMenu(_("Tamaño en la cuadrícula"))

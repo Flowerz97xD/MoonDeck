@@ -27,7 +27,8 @@ class VistaMascota(QWidget):
         self.app = app
         self.setMinimumHeight(120)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setMouseTracking(True)  # para la mano al pasar por encima de la mascota
+        self._acariciando = None    # dónde iba el ratón en la última caricia (botón pulsado)
         self.timer = QTimer(self, interval=100)
         self.timer.timeout.connect(self.update)
 
@@ -56,6 +57,13 @@ class VistaMascota(QWidget):
             e.ignore()
             return
         accion = self.app.mascota.pulsar(e.position().x(), e.position().y())
+        if accion is None and self.app.mascota.en_mascota(e.position().x(), e.position().y()):
+            # Una caricia (y si arrastra por encima, más): no mueve la ventana
+            self._acariciando = e.position()
+            self.app.mascota.acariciar()
+            self.setCursor(Qt.ClosedHandCursor)
+            self.update()
+            return
         if accion == "adoptar":
             personalizar_mascota(self.app, self.window())
         elif accion == "tienda":
@@ -63,6 +71,25 @@ class VistaMascota(QWidget):
         elif accion is None:
             e.ignore()
         self.update()
+
+    def mouseMoveEvent(self, e):
+        m, x, y = self.app.mascota, e.position().x(), e.position().y()
+        if self._acariciando is not None and e.buttons() & Qt.LeftButton:
+            # Acariciar es pasar la mano por encima: una caricia por cada trocito de recorrido
+            if m.en_mascota(x, y) and (e.position() - self._acariciando).manhattanLength() > 18:
+                self._acariciando = e.position()
+                m.acariciar()
+            return
+        sobre_boton = any(bx <= x <= bx + bw and by <= y <= by + bh for bx, by, bw, bh, _a in m.botones)
+        self.setCursor(Qt.PointingHandCursor if sobre_boton else
+                       Qt.OpenHandCursor if m.en_mascota(x, y) else Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, e):
+        if self._acariciando is None:
+            e.ignore()
+            return
+        self._acariciando = None
+        self.setCursor(Qt.OpenHandCursor)
 
 
 class LienzoMascota(QWidget):

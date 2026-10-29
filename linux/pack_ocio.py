@@ -95,8 +95,9 @@ def construir(self, s):
 
 def menu(self, tarjeta, menu):
     if tarjeta.clave == "juegos":
-        sub = self.submenu(menu, "Juego")
+        # Los juegos, a la vista (sin submenú): se elige con un clic
         for clave, nombre in juegos.JUEGOS:
-            self.item(sub, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
+            self.item(menu, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
+        menu.append(Gtk.SeparatorMenuItem())
         self.item(menu, "Nueva partida", self.juego_vista.nueva)
         menu.append(Gtk.SeparatorMenuItem())

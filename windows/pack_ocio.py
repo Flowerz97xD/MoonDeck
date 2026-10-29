@@ -121,10 +121,11 @@ def construir(self, s):
 
 def menu(self, tarjeta, menu):
     if tarjeta.clave == "juegos":
-        sub = menu.addMenu(_("Juego"))
+        # Los juegos, a la vista (sin submenú): se elige con un clic, también desde el título
         for clave, nombre in juegos.JUEGOS:
-            a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.juego_vista.poner(c))
+            a = menu.addAction(_(nombre), lambda _x=False, c=clave: self.juego_vista.poner(c))
             a.setCheckable(True)
             a.setChecked(self.juego_vista.juego.nombre == clave)
+        menu.addSeparator()
         menu.addAction(_("Nueva partida"), self.juego_vista.nueva)
         menu.addSeparator()

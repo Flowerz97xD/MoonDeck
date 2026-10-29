@@ -731,4 +731,8 @@ TEXTOS = {
     'Las monedas se ganan cada día que pasáis juntos y en los minijuegos (widget Juegos).': 'You earn coins every day you spend together and in the mini-games (Games widget).',
     'La letra de lo que suena, sincronizada como en Spotify (también con discos enteros).': "The lyrics of what's playing, synced like in Spotify (also with whole albums).",
     'Una mascota en pixel art que cuidar, que reacciona a lo que pasa en tu PC.': 'A pixel-art pet to look after that reacts to what happens on your PC.',
+    'Clic para ver las opciones de este widget': "Click to see this widget's options",
+    '¡Purrr…!': 'Purrr…!',
+    '¡Guau!': 'Woof!',
+    '¡Qué gustito!': 'That feels nice!',
 }
