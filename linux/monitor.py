@@ -367,6 +367,19 @@ class LienzoCairo:
         self._color(color)
         cr.fill()
 
+    def recortar(self, x, y, w, h, radio):
+        """Lo que se dibuje hasta sin_recorte() no sale de este rectángulo redondeado."""
+        self.cr.save()
+        self.cr.new_path()
+        if radio:
+            rect_redondeado(self.cr, x, y, w, h, radio)
+        else:
+            self.cr.rectangle(x, y, w, h)
+        self.cr.clip()
+
+    def sin_recorte(self):
+        self.cr.restore()
+
     _hojas = {}  # la hoja del dinosaurio ya teñida, por color
 
     def sprite(self, sx, sy, sw, sh, dx, dy, dw, dh, tinta=None):
