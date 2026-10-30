@@ -46,11 +46,20 @@ class VistaMascota(Dibujo):
         self.app = app
         self.poner_alto(120, 260)
         self.set_vexpand(True)
+        self._acariciando = None  # dónde iba el ratón en la última caricia (botón pulsado)
+        self._cursor = None
+        self.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         animar(self, 100)
         self.connect("draw", self.dibujar)
         self.connect("button-press-event", self._pulsar)
-        self.connect("realize", lambda _w: self.get_window().set_cursor(
-            Gdk.Cursor.new_from_name(self.get_display(), "pointer")))
+        self.connect("button-release-event", self._soltar)
+        self.connect("motion-notify-event", self._mover)
+
+    def _poner_cursor(self, nombre):
+        ventana = self.get_window()
+        if ventana and nombre != self._cursor:
+            self._cursor = nombre
+            ventana.set_cursor(Gdk.Cursor.new_from_name(self.get_display(), nombre))
 
     def dibujar(self, _w, cr):
         self.app.mascota.dibujar(LienzoCairo(self, cr), paleta(), self.get_allocated_width(),
@@ -63,12 +72,39 @@ class VistaMascota(Dibujo):
         if ev.type != Gdk.EventType.BUTTON_PRESS:
             return True  # los dobles clics llegan además como un evento aparte
         accion = self.app.mascota.pulsar(ev.x, ev.y)
+        if accion is None and self.app.mascota.en_mascota(ev.x, ev.y):
+            # Una caricia (y si arrastra por encima, más): no mueve la ventana
+            self._acariciando = (ev.x, ev.y)
+            self.app.mascota.acariciar()
+            self._poner_cursor("grabbing")
+            self.queue_draw()
+            return True
         if accion == "adoptar":
             personalizar_mascota(self.app, ventana_de(self))
         elif accion == "tienda":
             abrir_tienda(self.app.mascota, ventana_de(self))
         self.queue_draw()
         return accion is not None  # fuera de los botones se arrastra la tarjeta
+
+    def _mover(self, _w, ev):
+        m = self.app.mascota
+        if self._acariciando is not None:
+            # Acariciar es pasar la mano por encima: una caricia por cada trocito de recorrido
+            if m.en_mascota(ev.x, ev.y) and (abs(ev.x - self._acariciando[0]) +
+                                             abs(ev.y - self._acariciando[1])) > 18:
+                self._acariciando = (ev.x, ev.y)
+                m.acariciar()
+            return True
+        sobre_boton = any(bx <= ev.x <= bx + bw and by <= ev.y <= by + bh for bx, by, bw, bh, _a in m.botones)
+        self._poner_cursor("pointer" if sobre_boton else "grab" if m.en_mascota(ev.x, ev.y) else "default")
+        return False
+
+    def _soltar(self, _w, ev):
+        if self._acariciando is None:
+            return False
+        self._acariciando = None
+        self._poner_cursor("grab")
+        return True
 
 
 class LienzoMascota(Dibujo):
@@ -538,7 +574,9 @@ def construir(self, s):
     self.mascota_letras = letras.Letras()
     try:  # las partidas ganadas dan monedas (si está el pack Juegos)
         import juegos
+        import minijuegos
         juegos.AL_GANAR = self.mascota.anadir_monedas
+        minijuegos.DIBUJAR_MASCOTA = self.mascota.dibujar_sola  # en Atrapa la comida juega ella
     except ImportError:
         pass
     c = self.tarjeta("mascota", "Mascota")
