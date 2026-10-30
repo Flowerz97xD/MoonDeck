@@ -82,6 +82,9 @@ MINIMO_AUSENTE = 10
 MAX_HORAS = 72
 AVISO_CADA = 3 * 3600
 MONEDAS_INICIALES = 15
+CARICIAS_POR_HORA = 12     # las que suben el ánimo (después solo hacen corazones)
+_VIDA_CORAZON = 1.6        # segundos que tarda en subir y desvanecerse un corazón
+_CORAZON = [".rr.rr.", "rrrrrrr", "rrrrrrr", ".rrrrr.", "..rrr..", "...r..."]
 MAX_MONEDAS = 400          # la hucha: caben varias compras grandes, pero hay que gastar
 PREMIO_DIA = (15, 3, 30)   # monedas por cada día: base, + por día seguido de racha, tope
 
@@ -691,7 +694,21 @@ def dibujar_mascota(l, x, y, px, especie, colores, expresion="normal", complemen
     """La mascota en (x, y); `px` es el tamaño de un cuadro de 16 x 16 (la mascota mide 16 * px)
     y se dibuja con el doble de detalle, a 32 x 32. expresion: normal, parpadeo, feliz, triste,
     dormido, comiendo. pelaje: None (sus colores), "dorado" (con un brillo que la recorre) o
-    "arcoiris" (franjas de colores que bajan)."""
+    "arcoiris" (franjas de colores que bajan).
+
+    Si el lienzo sabe guardar dibujos (capa), la mascota se dibuja una vez y luego solo se pega:
+    son muchos cuadraditos y dibujarlos en cada frame se notaba (tirones en la mascota y los juegos)."""
+    capa = getattr(l, "capa", None)
+    anima = pelaje in ("dorado", "arcoiris") or any(c in _ANIMADOS for c in complementos)
+    if capa is None or anima:  # lo que cambia con el tiempo, a mano cada vez
+        _pintar_mascota(l, x, y, px, especie, colores, expresion, complementos, sucia, t, pelaje)
+        return
+    clave = ("mascota", especie, tuple(colores), expresion, tuple(complementos), sucia, round(px, 2))
+    capa(clave, x, y, 16 * px + 2, 19 * px + 2,
+         lambda lc: _pintar_mascota(lc, 0, 0, px, especie, colores, expresion, complementos, sucia, t, pelaje))
+
+
+def _pintar_mascota(l, x, y, px, especie, colores, expresion, complementos, sucia, t, pelaje):
     cuerpo, manchas, ojos = (hex_rgb(c) for c in colores)
     if pelaje == "dorado":
         cuerpo, manchas = (1.0, 0.8, 0.25), (0.85, 0.55, 0.1)
@@ -1635,6 +1652,9 @@ class Mascota:
         self.animacion = ("", 0.0)
         self._guardado = time.monotonic()
         self._parpadeo = time.monotonic() + 3
+        self.zona = None           # (x, y, lado) de la mascota en el último dibujo
+        self._corazones = []       # (cuándo salió, desplazamiento) de los de las caricias
+        self._ultima_caricia = 0.0
 
     @property
     def adoptada(self):
@@ -1873,6 +1893,40 @@ class Mascota:
         self.al_guardar()
         return None
 
+    def en_mascota(self, x, y):
+        """Si (x, y) cae sobre la mascota (para acariciarla)."""
+        if not self.zona:
+            return False
+        zx, zy, lado = self.zona
+        return zx + lado * 0.1 <= x <= zx + lado * 0.9 and zy + lado * 0.1 <= y <= zy + lado
+
+    def acariciar(self):
+        """Una caricia: corazones y cara feliz; sube un poco el ánimo (con un límite por hora,
+        para que no sea un truco). Dormida, solo un corazoncito: no se despierta."""
+        if not self.adoptada:
+            return
+        ahora = time.monotonic()
+        if ahora - self._ultima_caricia < 0.35:
+            return
+        self._ultima_caricia = ahora
+        self._corazones = [c for c in self._corazones if ahora - c[0] < _VIDA_CORAZON][-7:]
+        self._corazones.append((ahora, random.uniform(-0.25, 0.25)))
+        if self.d.get("durmiendo"):
+            return
+        hora = int(time.time() // 3600)
+        if self.d.get("caricias_hora") != hora:
+            self.d["caricias_hora"], self.d["caricias"] = hora, 0
+        if self.d.get("caricias", 0) < CARICIAS_POR_HORA:
+            self.d["caricias"] = self.d.get("caricias", 0) + 1
+            self._cambiar("felicidad", 1.5)
+        self._animar("caricia", 1.0)
+        texto, hasta = self.burbuja
+        if not texto or ahora > hasta:
+            especie = self.d.get("especie")
+            frase = (_("¡Purrr…!") if especie == "gato" else
+                     _("¡Guau!") if especie in ("perro", "carlino", "cocker") else _("¡Qué gustito!"))
+            self.decir(frase, 1.6)
+
     def anadir_monedas(self, n, avisar=True):
         """Suma monedas sin pasar del máximo de la hucha. Devuelve las que han cabido."""
         if not self.adoptada:
@@ -1989,6 +2043,16 @@ class Mascota:
         zona_y, zona_h = alto_cab + 2, y_fin - alto_cab - 2
         self._escena(l, pal, 0, zona_y, w, zona_h, escala, contexto, t)
 
+    def dibujar_sola(self, l, cx, abajo, lado, expresion="normal"):
+        """Solo la mascota (con lo que lleva puesto), centrada en cx y con los pies en `abajo`:
+        para los minijuegos. Devuelve False si no hay mascota adoptada."""
+        if not self.adoptada:
+            return False
+        px = max(1.0, lado / 16)
+        dibujar_mascota(l, cx - 8 * px, abajo - 16 * px, px, self.d["especie"], self.d["colores"], expresion,
+                        self.d.get("puestos", []), t=time.monotonic(), pelaje=self.d.get("pelaje"))
+        return True
+
     def _escena(self, l, pal, x, y, w, h, escala, contexto, t):
         if h < 30:
             return
@@ -2018,10 +2082,11 @@ class Mascota:
         sombra = (0, 0, 0, 0.18) if suelo_fondo else con_alfa(pal["tenue"], 0.12)
         l.rect(cx - lado * 0.36, suelo - px * 1.1, lado * 0.72, px * 1.6, px, sombra)
         mx, my = cx - lado / 2 + dx, suelo - lado + dy
+        self.zona = (mx, my, lado)
         expresion = humor
         if anim == "comer":
             expresion = "comiendo" if int(t * 5) % 2 else "normal"
-        elif anim in ("jugar", "limpiar") or baila:
+        elif anim in ("jugar", "limpiar", "caricia") or baila:
             expresion = "feliz"
         elif picotea:
             expresion = "comiendo" if (t % 3.2) > 0.35 else "normal"
@@ -2093,6 +2158,18 @@ class Mascota:
                 fase = (t * 0.9 + i / 6) % 1
                 l.circulo(mx + lado * (0.15 + (i * 0.37) % 0.7), my + lado * (0.9 - fase * 0.9),
                           px * (0.6 + (i % 3) * 0.3), con_alfa((0.8, 0.9, 1.0), 0.8 * (1 - fase)))
+        # Corazones de las caricias: suben desde la cabeza y se desvanecen
+        ahora = time.monotonic()
+        for salio, desvio in self._corazones:
+            k = (ahora - salio) / _VIDA_CORAZON
+            if 0 <= k < 1:
+                q = max(1.0, px / 2)
+                hx = mx + lado * (0.5 + desvio) - 3.5 * q + math.sin(k * 6 + desvio * 9) * q * 1.5
+                hy = my + lado * 0.1 - k * lado * 0.55
+                for f, fila in enumerate(_CORAZON):
+                    for c, v in enumerate(fila):
+                        if v != ".":
+                            l.rect(hx + c * q, hy + f * q, q, q, 0, (1.0, 0.35 + 0.15 * (f < 2), 0.5, 1 - k * k))
         # Bocadillo
         texto, hasta = self.burbuja
         if texto and time.monotonic() < hasta:

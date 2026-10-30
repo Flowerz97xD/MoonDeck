@@ -22,11 +22,13 @@ class VistaJuego(Dibujo):
         self.poner_alto(80, 280)  # en una celda pequeña se dibuja en pequeño, sin cortar
         self.set_vexpand(True)
         self.set_can_focus(True)
-        self.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.KEY_RELEASE_MASK)
+        self.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.KEY_RELEASE_MASK |
+                        Gdk.EventMask.POINTER_MOTION_MASK)  # algunos juegos siguen el ratón
         self._timer = None
         self.connect("draw", self.dibujar)
         self.connect("button-press-event", self._pulsar)
         self.connect("button-release-event", self._soltar)
+        self.connect("motion-notify-event", self._mover)
         self.connect("key-press-event", lambda _w, ev: self._tecla(ev, True))
         self.connect("key-release-event", lambda _w, ev: self._tecla(ev, False))
         self.connect("map", lambda _w: self._programar())
@@ -75,6 +77,12 @@ class VistaJuego(Dibujo):
         self._programar()
         return usado
 
+    def _mover(self, _w, ev):
+        if self.juego.mover(ev.x, ev.y):
+            self.queue_draw()
+            self._programar()
+        return False
+
     def _tecla(self, ev, pulsada):
         nombre = self.TECLAS.get(Gdk.keyval_to_lower(ev.keyval))
         if nombre and self.juego.tecla(nombre, pulsada):
@@ -88,15 +96,16 @@ class VistaJuego(Dibujo):
 
 
 def construir(self, s):
-    # Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (se elige con el clic derecho).
+    # Juegos: los minijuegos de juegos.py y minijuegos.py (se eligen con el clic derecho).
     c = self.tarjeta("juegos", "Juegos")
     self.juego_vista = c.add_w(VistaJuego(self), expand=True)
 
 
 def menu(self, tarjeta, menu):
     if tarjeta.clave == "juegos":
-        sub = self.submenu(menu, "Juego")
+        # Los juegos, a la vista (sin submenú): se elige con un clic
         for clave, nombre in juegos.JUEGOS:
-            self.item(sub, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
+            self.item(menu, nombre, lambda c=clave: self.juego_vista.poner(c), self.juego_vista.juego.nombre == clave)
+        menu.append(Gtk.SeparatorMenuItem())
         self.item(menu, "Nueva partida", self.juego_vista.nueva)
         menu.append(Gtk.SeparatorMenuItem())
