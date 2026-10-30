@@ -743,7 +743,6 @@ TEXTOS = {
     'Poner en el widget': 'Добавить в виджет',
     'Para ver el móvil hace falta scrcpy 3 o más moderno.': 'Для телефона нужен scrcpy версии 3 или новее.',
     'Tu scrcpy es antiguo: hace falta la versión 3 o más moderna.': 'Ваш scrcpy устарел: нужна версия 3 или новее.',
-    'Conecta el móvil por USB con la depuración USB activada.': 'Подключите телефон по USB с включённой отладкой по USB.',
     'Linux no deja usar el móvil: falta la regla de udev de Android.': 'Linux не даёт доступ к телефону: нет правила udev для Android.',
     'Acepta en el móvil el aviso «¿Permitir la depuración USB?».': 'Подтвердите на телефоне запрос «Разрешить отладку по USB?».',
     'Controlar todo el móvil': 'Управлять всем телефоном',
@@ -755,4 +754,6 @@ TEXTOS = {
     'Sonido del móvil en el PC': 'Звук телефона на ПК',
     'scrcpy se ha cerrado.': 'scrcpy закрылся.',
     'No se pudieron leer las apps del móvil.': 'Не удалось прочитать приложения телефона.',
+    'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': 'Подключите телефон по USB или по Wi-Fi с включённой беспроводной отладкой.',
+    'Calidad alta (más nítida, usa más red)': 'Высокое качество (чётче, больше трафика)',
 }

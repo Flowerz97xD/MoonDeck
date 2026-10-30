@@ -743,7 +743,6 @@ TEXTOS = {
     'Poner en el widget': 'Add to the widget',
     'Para ver el móvil hace falta scrcpy 3 o más moderno.': 'To see the phone you need scrcpy 3 or newer.',
     'Tu scrcpy es antiguo: hace falta la versión 3 o más moderna.': 'Your scrcpy is too old: version 3 or newer is needed.',
-    'Conecta el móvil por USB con la depuración USB activada.': 'Connect the phone by USB with USB debugging on.',
     'Linux no deja usar el móvil: falta la regla de udev de Android.': "Linux won't let MoonDeck use the phone: the Android udev rule is missing.",
     'Acepta en el móvil el aviso «¿Permitir la depuración USB?».': 'Accept the "Allow USB debugging?" prompt on the phone.',
     'Controlar todo el móvil': 'Control the whole phone',
@@ -755,4 +754,6 @@ TEXTOS = {
     'Sonido del móvil en el PC': 'Phone sound on the PC',
     'scrcpy se ha cerrado.': 'scrcpy has closed.',
     'No se pudieron leer las apps del móvil.': "Couldn't read the phone's apps.",
+    'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': 'Connect the phone by USB, or over Wi-Fi with wireless debugging on.',
+    'Calidad alta (más nítida, usa más red)': 'High quality (sharper, uses more network)',
 }

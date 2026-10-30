@@ -16,7 +16,8 @@ from idioma import _
 
 WEB_SCRCPY = "https://github.com/Genymobile/scrcpy/releases/latest"
 MAX_FAVORITAS = 8
-ANCHO_VENTANA = 900  # px del lado largo de las ventanas de scrcpy
+ANCHO_VENTANA = 900  # px del lado largo de las ventanas de scrcpy (calidad normal)
+BITRATE_ALTA = "20M"  # bits por segundo del vídeo (calidad alta; por defecto son 8M)
 
 
 def buscar_scrcpy():
@@ -52,7 +53,7 @@ def leer_lista_apps(texto):
 
 class Movil:
     """estado: "sin_scrcpy", "viejo" (scrcpy < 3), "sin_movil", "sin_permiso" (falta la regla
-    de udev), "sin_autorizar" (falta aceptar el aviso en el móvil) o "listo"."""
+    de udev), "sin_autorizar" (falta aceptar el aviso en el móvil) o "listo". Por USB o por Wi-Fi."""
 
     def __init__(self, datos, al_guardar, carpeta):
         """datos: el dict de la configuración (se modifica aquí); al_guardar: guarda la config."""
@@ -67,6 +68,7 @@ class Movil:
         self.procesos = {}       # "todo" o el paquete -> Popen
         self._scrcpy = None      # (ruta, versión, opciones de su --help)
         self._comprobando = False
+        self._wifi_t = 0.0       # cuándo se intentó la conexión por Wi-Fi por última vez
 
     # --- en segundo plano -------------------------------------------------------
 
@@ -95,22 +97,28 @@ class Movil:
         if self._scrcpy[1] < 3:  # sin pantallas virtuales
             self.estado = "viejo"
             return
+        dispositivos = self._dispositivos()
+        if not any(e == "device" for _s, e in dispositivos) and time.monotonic() - self._wifi_t > 20:
+            self._wifi_t = time.monotonic()  # sin cable: se prueba el Wi-Fi, sin machacar la red
+            self._conectar_wifi()
+            dispositivos = self._dispositivos()
         estado, serie = "sin_movil", None
-        for linea in _ejecutar([self.adb(), "devices"], env=self.entorno()).splitlines()[1:]:
-            partes = linea.split(None, 1)
-            if len(partes) < 2:
-                continue
-            if partes[1].startswith("device"):
-                estado, serie = "listo", partes[0]
-                break
-            if "no permissions" in partes[1]:
-                estado = "sin_permiso"
-            elif partes[1].startswith("unauthorized") and estado == "sin_movil":
-                estado = "sin_autorizar"
+        listos = sorted((s for s, e in dispositivos if e == "device"), key=lambda s: ":" in s)  # USB primero
+        if listos:
+            estado, serie = "listo", listos[0]
+            if ":" in serie and self.d.get("wifi") != serie:  # la próxima vez se prueba primero este
+                self.d["wifi"] = serie
+                self.al_guardar()
+        else:
+            for _s, e in dispositivos:
+                if "no permissions" in e:
+                    estado = "sin_permiso"
+                elif e.startswith("unauthorized") and estado == "sin_movil":
+                    estado = "sin_autorizar"
         if serie and serie != self.serie:
             self.serie = serie
             self.nombre = self._nombre(serie)
-            if self.d.get("serie") != serie or not self.d.get("apps"):
+            if not self.d.get("apps"):
                 self.leer_apps()
         self.estado = estado
         for clave, p in list(self.procesos.items()):
@@ -118,6 +126,29 @@ class Movil:
                 del self.procesos[clave]
                 if p.returncode and time.monotonic() - p.inicio < 15:  # no llegó a abrirse
                     self.error = self._ultimo_error() or _("scrcpy se ha cerrado.")
+
+    def _dispositivos(self):
+        """[(serie, estado)] según "adb devices"."""
+        lista = []
+        for linea in _ejecutar([self.adb(), "devices"], env=self.entorno()).splitlines()[1:]:
+            partes = linea.split(None, 1)
+            if len(partes) == 2:
+                lista.append((partes[0], partes[1]))
+        return lista
+
+    def _conectar_wifi(self):
+        """Con la depuración inalámbrica: prueba el último móvil por Wi-Fi y luego los que
+        anuncia en la red (el puerto cambia cada vez, así que se buscan)."""
+        candidatos = [self.d["wifi"]] if self.d.get("wifi") else []
+        for linea in _ejecutar([self.adb(), "mdns", "services"], env=self.entorno()).splitlines():
+            m = re.search(r"\d+\.\d+\.\d+\.\d+:\d+", linea) if "_adb-tls-connect" in linea else None
+            if m and m.group(0) not in candidatos:
+                candidatos.append(m.group(0))
+        for destino in candidatos:
+            if "connected to" in _ejecutar([self.adb(), "connect", destino], timeout=8, env=self.entorno()):
+                self.d["wifi"] = destino
+                self.al_guardar()
+                return
 
     def _nombre(self, serie):
         """El nombre que le has puesto al móvil (o su modelo)."""
@@ -177,8 +208,11 @@ class Movil:
         viejo = self.procesos.pop(clave, None)
         if viejo and viejo.poll() is None:
             viejo.terminate()  # se vuelve a abrir: así sale delante
-        orden = [self._scrcpy[0], "-s", self.serie, f"--max-size={ANCHO_VENTANA}", "--stay-awake",
-                 f"--window-title={nombre or self.nombre}"]
+        orden = [self._scrcpy[0], "-s", self.serie, "--stay-awake", f"--window-title={nombre or self.nombre}"]
+        if self.calidad_alta():
+            orden.append(f"--video-bit-rate={BITRATE_ALTA}")  # sin límite de tamaño: la resolución del móvil
+        else:
+            orden.append(f"--max-size={ANCHO_VENTANA}")
         if "--hwdec" in self._scrcpy[2]:
             # Por software: con algunas gráficas (NVIDIA) la de hardware deja la ventana en negro
             orden.append("--hwdec=disabled")
@@ -197,6 +231,13 @@ class Movil:
                                  env=self.entorno(), start_new_session=True)
         p.inicio = time.monotonic()
         self.procesos[clave] = p
+
+    def calidad_alta(self):
+        return self.d.get("calidad", "alta") == "alta"
+
+    def alternar_calidad(self):
+        self.d["calidad"] = "normal" if self.calidad_alta() else "alta"
+        self.al_guardar()
 
     # --- favoritas ---------------------------------------------------------------
 

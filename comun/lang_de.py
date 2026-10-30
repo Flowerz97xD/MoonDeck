@@ -743,7 +743,6 @@ TEXTOS = {
     'Poner en el widget': 'Zum Widget hinzufügen',
     'Para ver el móvil hace falta scrcpy 3 o más moderno.': 'Für das Handy brauchst du scrcpy 3 oder neuer.',
     'Tu scrcpy es antiguo: hace falta la versión 3 o más moderna.': 'Dein scrcpy ist zu alt: Version 3 oder neuer wird benötigt.',
-    'Conecta el móvil por USB con la depuración USB activada.': 'Verbinde das Handy per USB mit aktiviertem USB-Debugging.',
     'Linux no deja usar el móvil: falta la regla de udev de Android.': 'Linux erlaubt den Zugriff aufs Handy nicht: Die Android-udev-Regel fehlt.',
     'Acepta en el móvil el aviso «¿Permitir la depuración USB?».': 'Bestätige auf dem Handy die Meldung „USB-Debugging zulassen?“.',
     'Controlar todo el móvil': 'Das ganze Handy steuern',
@@ -755,4 +754,6 @@ TEXTOS = {
     'Sonido del móvil en el PC': 'Handy-Ton am PC',
     'scrcpy se ha cerrado.': 'scrcpy wurde beendet.',
     'No se pudieron leer las apps del móvil.': 'Die Apps des Handys konnten nicht gelesen werden.',
+    'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': 'Verbinde das Handy per USB oder per WLAN mit aktiviertem drahtlosem Debugging.',
+    'Calidad alta (más nítida, usa más red)': 'Hohe Qualität (schärfer, braucht mehr Netz)',
 }

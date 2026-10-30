@@ -743,7 +743,6 @@ TEXTOS = {
     'Poner en el widget': '添加到小组件',
     'Para ver el móvil hace falta scrcpy 3 o más moderno.': '需要 scrcpy 3 或更新版本才能显示手机。',
     'Tu scrcpy es antiguo: hace falta la versión 3 o más moderna.': '你的 scrcpy 太旧：需要 3 或更新版本。',
-    'Conecta el móvil por USB con la depuración USB activada.': '用 USB 连接手机并开启 USB 调试。',
     'Linux no deja usar el móvil: falta la regla de udev de Android.': 'Linux 不允许使用手机：缺少 Android 的 udev 规则。',
     'Acepta en el móvil el aviso «¿Permitir la depuración USB?».': '在手机上接受“允许 USB 调试吗？”提示。',
     'Controlar todo el móvil': '控制整部手机',
@@ -755,4 +754,6 @@ TEXTOS = {
     'Sonido del móvil en el PC': '在电脑上播放手机声音',
     'scrcpy se ha cerrado.': 'scrcpy 已关闭。',
     'No se pudieron leer las apps del móvil.': '无法读取手机应用。',
+    'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': '用 USB 连接手机，或在开启无线调试后通过 Wi-Fi 连接。',
+    'Calidad alta (más nítida, usa más red)': '高画质（更清晰，占用更多网络）',
 }

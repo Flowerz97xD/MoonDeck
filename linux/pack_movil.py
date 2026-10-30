@@ -165,7 +165,7 @@ def abrir_lista(app, padre=None):
 AVISOS = {
     "sin_scrcpy": "Para ver el móvil hace falta scrcpy 3 o más moderno.",
     "viejo": "Tu scrcpy es antiguo: hace falta la versión 3 o más moderna.",
-    "sin_movil": "Conecta el móvil por USB con la depuración USB activada.",
+    "sin_movil": "Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.",
     "sin_permiso": "Linux no deja usar el móvil: falta la regla de udev de Android.",
     "sin_autorizar": "Acepta en el móvil el aviso «¿Permitir la depuración USB?».",
 }
@@ -251,4 +251,5 @@ def menu(self, tarjeta, menu):
         self.item(menu, "Apagar la pantalla del móvil al controlarlo",
                   lambda: alternar("apagar_pantalla", False), d.get("apagar_pantalla", False))
         self.item(menu, "Sonido del móvil en el PC", lambda: alternar("sonido", True), d.get("sonido", True))
+        self.item(menu, "Calidad alta (más nítida, usa más red)", m.alternar_calidad, m.calidad_alta())
         menu.append(Gtk.SeparatorMenuItem())
