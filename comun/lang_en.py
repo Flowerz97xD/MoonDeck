@@ -756,4 +756,5 @@ TEXTOS = {
     'No se pudieron leer las apps del móvil.': "Couldn't read the phone's apps.",
     'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': 'Connect the phone by USB, or over Wi-Fi with wireless debugging on.',
     'Calidad alta (más nítida, usa más red)': 'High quality (sharper, uses more network)',
+    'Buscar el móvil': 'Find the phone',
 }

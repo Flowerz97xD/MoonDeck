@@ -756,4 +756,5 @@ TEXTOS = {
     'No se pudieron leer las apps del móvil.': '无法读取手机应用。',
     'Conecta el móvil por USB, o por Wi-Fi con la depuración inalámbrica activada.': '用 USB 连接手机，或在开启无线调试后通过 Wi-Fi 连接。',
     'Calidad alta (más nítida, usa más red)': '高画质（更清晰，占用更多网络）',
+    'Buscar el móvil': '查找手机',
 }

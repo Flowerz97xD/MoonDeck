@@ -51,6 +51,16 @@ def leer_lista_apps(texto):
     return sorted(apps, key=lambda a: a[1].lower())
 
 
+def leer_avahi(texto):
+    """Los "ip:puerto" (IPv4) de la salida de "avahi-browse -trpk", sin repetir."""
+    encontrados = []
+    for linea in texto.splitlines():
+        m = re.search(r";(\d+\.\d+\.\d+\.\d+);(\d+);", linea) if linea.startswith("=") else None
+        if m and f"{m.group(1)}:{m.group(2)}" not in encontrados:
+            encontrados.append(f"{m.group(1)}:{m.group(2)}")
+    return encontrados
+
+
 class Movil:
     """estado: "sin_scrcpy", "viejo" (scrcpy < 3), "sin_movil", "sin_permiso" (falta la regla
     de udev), "sin_autorizar" (falta aceptar el aviso en el móvil) o "listo". Por USB o por Wi-Fi."""
@@ -67,10 +77,17 @@ class Movil:
         self.leyendo = False     # leyendo las apps
         self.procesos = {}       # "todo" o el paquete -> Popen
         self._scrcpy = None      # (ruta, versión, opciones de su --help)
+        self.buscando = False    # se ha pedido buscar el móvil a mano
         self._comprobando = False
         self._wifi_t = 0.0       # cuándo se intentó la conexión por Wi-Fi por última vez
 
     # --- en segundo plano -------------------------------------------------------
+
+    def buscar(self):
+        """Busca el móvil ya, sin esperar al siguiente intento por Wi-Fi."""
+        self.buscando = True
+        self._wifi_t = 0.0
+        self.comprobar()
 
     def comprobar(self):
         """Mira (en un hilo) si hay scrcpy y un móvil conectado."""
@@ -85,6 +102,7 @@ class Movil:
             self.error = str(e)
         finally:
             self._comprobando = False
+            self.buscando = False
 
     def _mirar(self):
         ruta = buscar_scrcpy()
@@ -137,18 +155,35 @@ class Movil:
         return lista
 
     def _conectar_wifi(self):
-        """Con la depuración inalámbrica: prueba el último móvil por Wi-Fi y luego los que
-        anuncia en la red (el puerto cambia cada vez, así que se buscan)."""
-        candidatos = [self.d["wifi"]] if self.d.get("wifi") else []
-        for linea in _ejecutar([self.adb(), "mdns", "services"], env=self.entorno()).splitlines():
-            m = re.search(r"\d+\.\d+\.\d+\.\d+:\d+", linea) if "_adb-tls-connect" in linea else None
-            if m and m.group(0) not in candidatos:
-                candidatos.append(m.group(0))
+        """Con la depuración inalámbrica: prueba los móviles que se anuncian en la red y luego
+        el último que funcionó (la IP y el puerto cambian, así que primero se buscan)."""
+        candidatos = self._anunciados()
+        if self.d.get("wifi") and self.d["wifi"] not in candidatos:
+            candidatos.append(self.d["wifi"])
         for destino in candidatos:
-            if "connected to" in _ejecutar([self.adb(), "connect", destino], timeout=8, env=self.entorno()):
+            try:
+                salida = _ejecutar([self.adb(), "connect", destino], timeout=8, env=self.entorno())
+            except subprocess.TimeoutExpired:  # este no contesta: a por el siguiente
+                continue
+            if "connected to" in salida:
                 self.d["wifi"] = destino
                 self.al_guardar()
                 return
+
+    def _anunciados(self):
+        """Los "ip:puerto" de la depuración inalámbrica en la red. Primero Avahi, si está:
+        el mDNS de adb puede tardar muchísimo en ver un móvil que acaba de activarla."""
+        encontrados = []
+        if shutil.which("avahi-browse"):
+            try:
+                encontrados = leer_avahi(_ejecutar(["avahi-browse", "-trpk", "_adb-tls-connect._tcp"], timeout=5))
+            except subprocess.TimeoutExpired:
+                pass
+        for linea in _ejecutar([self.adb(), "mdns", "services"], env=self.entorno()).splitlines():
+            m = re.search(r"\d+\.\d+\.\d+\.\d+:\d+", linea) if "_adb-tls-connect" in linea else None
+            if m and m.group(0) not in encontrados:
+                encontrados.append(m.group(0))
+        return encontrados
 
     def _nombre(self, serie):
         """El nombre que le has puesto al móvil (o su modelo)."""

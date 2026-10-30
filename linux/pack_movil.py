@@ -182,6 +182,8 @@ def refrescar_movil(self):
     poner_texto(v["aviso"], aviso)
     poner_visible(v["aviso"], bool(aviso))
     poner_visible(v["descargar"], estado in ("sin_scrcpy", "viejo"))
+    poner_visible(v["buscar"], estado in ("sin_movil", "sin_permiso", "sin_autorizar"))
+    v["buscar"].set_sensitive(not m.buscando)
     poner_visible(v["equipo"], listo)
     if listo:
         v["equipo"].set_label(m.nombre)
@@ -212,12 +214,16 @@ def tic_movil(self):
 
 def construir(self, s):
     # Móvil: tu Android con scrcpy (sus apps en ventanas o el control total)
-    self.movil = movil.Movil(self.config.setdefault("movil", {}), self.guardar_config, CARPETA)
+    # Movil guarda desde sus hilos, y guardar_config toca GTK: siempre por el hilo principal
+    self.movil = movil.Movil(self.config.setdefault("movil", {}),
+                             lambda: GLib.idle_add(self.guardar_config), CARPETA)
     c = self.movil_tarjeta = self.tarjeta("movil", "Móvil")
     v = self.movil_vista = {"destacadas": None}
     v["aviso"] = c.add_w(etiqueta("", "dim", envolver=True))
     v["descargar"] = c.add_w(boton_texto("Descargar scrcpy", "principal"))
     v["descargar"].connect("clicked", lambda _b: abrir_web(movil.WEB_SCRCPY))
+    v["buscar"] = c.add_w(boton_texto("Buscar el móvil", "normal"))
+    v["buscar"].connect("clicked", lambda _b: (self.movil.buscar(), refrescar_movil(self)))
     v["equipo"] = c.add_w(boton_texto("", "principal"))
     v["equipo"].set_image(Gtk.Image.new_from_icon_name("smartphone-symbolic", Gtk.IconSize.BUTTON))
     v["equipo"].set_always_show_image(True)
