@@ -64,6 +64,8 @@ CATALOGO = tuple(p for p in (
      ("Letras",), ("letras.py",)),
     ("mascota", "Mascota", "Una mascota en pixel art que cuidar, que reacciona a lo que pasa en tu PC.",
      ("Mascota",), ("mascota.py", "letras.py")),
+    ("movil", "Móvil", "Tu Android en el escritorio: sus apps en ventanas o el control total (con scrcpy).",
+     ("Móvil",), ("movil.py",)) if sys.platform != "win32" else None,
     ("immich", "Immich", "Tu servidor de fotos Immich: espacio, biblioteca, tareas y la IA.",
      ("Immich",), ("immich.py", "contenedores.py")),
     ("docker", "Docker", "Tus contenedores de Docker: su estado, pararlos y arrancarlos.",
