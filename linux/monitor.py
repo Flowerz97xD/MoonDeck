@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import traceback
+import types
 from collections import deque
 from zoneinfo import ZoneInfo
 
@@ -1500,8 +1501,11 @@ class Tarjeta(Gtk.EventBox):
         self.brillo = 1.0          # del neón (baja cuando parpadea)
         self._secuencia = []
         self._siguiente = time.monotonic() + __import__("random").uniform(1, 8)
+        self._pulsado_titulo = None  # dónde se pulsó el título (clic = opciones, arrastre = mover)
+        self.titulo_con_opciones = False  # lo pone marcar_titulos: el título se puede pulsar
+        self._mano = False
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
-                        | Gdk.EventMask.POINTER_MOTION_MASK)
+                        | Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         # Si el contenido no cabe (celda pequeña del panel), se recorta al dibujar.
         self.contenido = caja(True, 6)
         self._margen = None
@@ -1514,7 +1518,9 @@ class Tarjeta(Gtk.EventBox):
         self.connect("draw", self.dibujar_fondo)
         self.connect_after("draw", self.dibujar_edicion)
         self.connect("button-press-event", self.pulsar)
+        self.connect("button-release-event", self.soltar)
         self.connect("motion-notify-event", self.mover_raton)
+        self.connect("leave-notify-event", lambda _w, _ev: self.poner_mano(False))
 
     def add_w(self, w, expand=None, prescindible=0):
         """prescindible: si la tarjeta es tan baja que no cabe todo (celda pequeña del
@@ -1729,19 +1735,62 @@ class Tarjeta(Gtk.EventBox):
         if ev.button == 1 and self.en_edicion():
             self.app.panel.empezar_arrastre(self, ev, "tam" if self.en_asa(ev.x, ev.y) else "mover")
             return True
+        if ev.button == 1 and self.titulo_con_opciones and self.en_titulo(ev):
+            self._pulsado_titulo = (ev.x_root, ev.y_root)  # clic (opciones) o arrastre (mover): se ve después
+            return True
         if ev.button == 1 and self.ventana:
-            if self.app.modo == "widgets":
-                # Ya no se recolocan solos (tampoco al reiniciar) hasta "Recolocar widgets".
-                self.app.manual = True
-                self.app.config["manual"] = True
-            self.ventana.empezar_arrastre(ev)
+            self.mover_ventana(ev)
             return True
         if ev.button == 3:
             self.app.menu_tarjeta(self).popup_at_pointer(ev)
             return True
         return False
 
+    def mover_ventana(self, ev):
+        if self.app.modo == "widgets":
+            # Ya no se recolocan solos (tampoco al reiniciar) hasta "Recolocar widgets".
+            self.app.manual = True
+            self.app.config["manual"] = True
+        self.ventana.empezar_arrastre(ev)
+
+    def en_titulo(self, ev):
+        t = self.lb_titulo
+        ventana = t.get_window()
+        if not t.get_visible() or ventana is None:
+            return False
+        # La etiqueta no tiene ventana propia: su sitio va en las coordenadas de la del padre
+        _v, x, y, _m = ventana.get_device_position(ev.device)
+        a = t.get_allocation()
+        return a.x <= x < a.x + a.width and a.y <= y < a.y + a.height
+
+    def poner_mano(self, mano):
+        """La manita sobre los títulos que se pueden pulsar."""
+        if mano != self._mano and not self.en_edicion():
+            self._mano = mano
+            ventana = self.get_toplevel().get_window()
+            if ventana:
+                ventana.set_cursor(Gdk.Cursor.new_from_name(self.get_display(), "pointer") if mano else None)
+        return False
+
+    def soltar(self, _w, ev):
+        if self._pulsado_titulo is None or ev.button != 1:
+            return False
+        self._pulsado_titulo = None  # un clic en el título: las opciones del widget
+        self.app.pulsar_titulo(self, ev)
+        return True
+
     def mover_raton(self, _w, ev):
+        if self._pulsado_titulo is not None:
+            # Se arrastra desde el título: ya no es un clic, se mueve la ventana como siempre
+            x0, y0 = self._pulsado_titulo
+            umbral = Gtk.Settings.get_default().props.gtk_dnd_drag_threshold
+            if abs(ev.x_root - x0) + abs(ev.y_root - y0) > umbral:
+                self._pulsado_titulo = None
+                if self.ventana:
+                    self.mover_ventana(types.SimpleNamespace(button=1, x_root=x0, y_root=y0, time=ev.time))
+            return False
+        if self.titulo_con_opciones:
+            self.poner_mano(self.en_titulo(ev))
         if self.en_edicion() and not self.app.panel.arrastre:
             ventana = self.get_toplevel().get_window()
             nombre = "nwse-resize" if self.en_asa(ev.x, ev.y) else "move"
@@ -3024,6 +3073,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.actualizar_reloj()
         self.actualizar_audio()
         packs.llamar(self.packs, "arrancar", self)
+        self.marcar_titulos()
 
         self.bandeja = None
         if AppIndicator:
@@ -3595,18 +3645,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                       round(tarjeta.opacidad * 100) == nivel)
         sub.append(Gtk.SeparatorMenuItem())
         self.item(sub, "Aplicar a todos los widgets", lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
-        if tarjeta.clave == "reloj":
-            self.menu_reloj(menu)
-        if tarjeta.clave == "calendario":
-            sub = self.submenu(menu, "La semana empieza en")
-            for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
-                self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
-            menu.append(Gtk.SeparatorMenuItem())
-        packs.llamar([p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())], "menu", self, tarjeta, menu)
-        if tarjeta.clave == "tiempo":
-            self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
-            self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
-            menu.append(Gtk.SeparatorMenuItem())
+        self.opciones_tarjeta(tarjeta, menu)
         if self.modo == "panel" and not tarjeta.ventana and tarjeta.clave in self.panel.celdas:
             _x, _x, alto, ancho = self.panel.celdas[tarjeta.clave]
             sub = self.submenu(menu, "Tamaño en la cuadrícula")
@@ -3631,6 +3670,50 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         menu.show_all()
         self._menu_tarjeta = menu  # que no lo borre el recolector mientras se muestra
         return menu
+
+    def opciones_tarjeta(self, tarjeta, menu):
+        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
+        es lo que sale al pulsar su título."""
+        if tarjeta.clave == "reloj":
+            self.menu_reloj(menu)
+        if tarjeta.clave == "calendario":
+            sub = self.submenu(menu, "La semana empieza en")
+            for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
+                self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
+            menu.append(Gtk.SeparatorMenuItem())
+        packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
+        if tarjeta.clave == "tiempo":
+            self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
+            self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
+            menu.append(Gtk.SeparatorMenuItem())
+
+    def packs_de(self, tarjeta):
+        return [p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())]
+
+    def pulsar_titulo(self, tarjeta, ev):
+        """Clic en el título: lo que enseñe su pack (gancho `titulo`) o el menú de opciones."""
+        if any(packs.llamar(self.packs_de(tarjeta), "titulo", self, tarjeta, ev)):
+            return
+        menu = self.menu_titulo(tarjeta)
+        if menu:
+            menu.show_all()
+            self._menu_tarjeta = menu  # que no lo borre el recolector mientras se muestra
+            menu.popup_at_widget(tarjeta.lb_titulo, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, ev)
+
+    def menu_titulo(self, tarjeta):
+        """El menú del título: solo las opciones de ese widget, o None si no tiene."""
+        menu = Gtk.Menu()
+        self.opciones_tarjeta(tarjeta, menu)
+        while menu.get_children() and isinstance(menu.get_children()[-1], Gtk.SeparatorMenuItem):
+            menu.remove(menu.get_children()[-1])
+        return menu if menu.get_children() else None
+
+    def marcar_titulos(self):
+        """En los widgets con opciones, el título se puede pulsar: manita y una pista al pasar."""
+        for t in self.tarjetas:
+            if any(hasattr(p, "titulo") for p in self.packs_de(t)) or self.menu_titulo(t):
+                t.titulo_con_opciones = True
+                t.lb_titulo.set_tooltip_text(_("Clic para ver las opciones de este widget"))
 
     def rehacer_bandeja(self):
         """El menú del icono de la bandeja depende del modo: se rehace con cada cambio."""

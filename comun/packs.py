@@ -12,8 +12,9 @@ Un pack_<id>.py puede definir:
     arrancar(app)      tras construir: primeras lecturas y temporizadores
     aplicar(app, s)    con cada lectura de los sensores
     menu(app, tarjeta, menu)        su parte del clic derecho (solo si la tarjeta es suya)
-    titulo(app, tarjeta, punto)     (Windows) el clic en el título de su tarjeta: si enseña algo
-                                    suyo en `punto` devuelve True; si no, sale el menú de opciones
+    titulo(app, tarjeta, punto)     el clic en el título de su tarjeta: si enseña algo suyo devuelve
+                                    True; si no, sale el menú de opciones. `punto`: en Windows, el
+                                    QPoint de debajo del título; en Linux, el evento del clic
     acciones(app, menu, ...)        su parte del menú general (bandeja)
     ajustes(ventana, cont)          su parte de Configuración > Widgets
     visibles(app, claves)           cuáles de sus tarjetas se ven (para no leer datos de más)
