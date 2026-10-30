@@ -595,6 +595,27 @@ class LienzoQt:
     def sin_recorte(self):
         self.p.restore()
 
+    _capas = {}  # dibujos que se repiten igual, ya hechos (ver capa)
+
+    def capa(self, clave, x, y, w, h, dibujar):
+        """Un dibujo de w x h que se repite igual muchas veces (la mascota son ~1300 cuadraditos):
+        dibujar(lienzo) se hace una sola vez en una imagen y luego solo se pega en (x, y)."""
+        escala = self.p.device().devicePixelRatioF()
+        clave = (clave, round(w), round(h), escala)
+        img = self._capas.get(clave)
+        if img is None:
+            if len(self._capas) > 120:
+                self._capas.clear()
+            img = QPixmap(max(1, round(w * escala)), max(1, round(h * escala)))
+            img.setDevicePixelRatio(escala)
+            img.fill(Qt.transparent)
+            p = QPainter(img)
+            p.setRenderHint(QPainter.Antialiasing)
+            dibujar(LienzoQt(self.widget, p))
+            p.end()
+            self._capas[clave] = img
+        self.p.drawPixmap(QPointF(round(x), round(y)), img)
+
     _hojas = {}  # la hoja del dinosaurio ya teñida, por color
 
     def sprite(self, sx, sy, sw, sh, dx, dy, dw, dh, tinta=None):
@@ -1550,10 +1571,38 @@ class Tarjeta(QWidget):
                 p.setPen(QPen(acento(170), 1.5, Qt.DashLine))
                 p.drawRoundedRect(QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5), self.radio, self.radio)
             return
+        # El fondo y el borde, hechos una vez y guardados: cada vez que cambia un texto o una
+        # gráfica de la tarjeta (cada segundo, en todas) Qt vuelve a pintar el fondo de detrás, y
+        # en el panel eso eran muchos degradados y neones por segundo (tirones en los juegos)
+        con_acrilico = bool(self.ventana and self.ventana.acrilico_activo)
+        escala = self.devicePixelRatioF()
+        clave = (self.width(), self.height(), escala, repr(sorted(perfil.items())), self.opacidad, self.brillo,
+                 con_acrilico)
+        if getattr(self, "_fondo_hecho", (None, None))[0] != clave:
+            img = QPixmap(max(1, round(self.width() * escala)), max(1, round(self.height() * escala)))
+            img.setDevicePixelRatio(escala)
+            img.fill(Qt.transparent)
+            q = QPainter(img)
+            q.setRenderHint(QPainter.Antialiasing)
+            self._pintar_fondo(q, perfil, r, ruta, con_acrilico)
+            q.end()
+            self._fondo_hecho = (clave, img)
+        p.drawPixmap(0, 0, self._fondo_hecho[1])
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        if self.en_edicion():
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(acento(170), 1.5, Qt.DashLine))
+            p.drawRoundedRect(r.adjusted(1, 1, -1, -1), self.radio, self.radio)
+            # Asa de tamaño en la esquina inferior derecha.
+            p.setPen(QPen(tenue(200), 2, Qt.SolidLine, Qt.RoundCap))
+            w, h = self.width(), self.height()
+            for d in (6, 11, 16):
+                p.drawLine(QPointF(w - 5, h - 5 - d), QPointF(w - 5 - d, h - 5))
+
+    def _pintar_fondo(self, p, perfil, r, ruta, con_acrilico):
         p.save()
         p.setClipPath(ruta)
         # En su propia ventana con acrílico, el color del fondo ya lo pone el cristal.
-        con_acrilico = bool(self.ventana and self.ventana.acrilico_activo)
         pintar_fondo(p, perfil, r, self.opacidad, solo_extras=con_acrilico)
         p.restore()
         if perfil["neon"]:
@@ -1565,16 +1614,6 @@ class Tarjeta(QWidget):
             p.setPen(QPen(borde, perfil["borde_grosor"]))
             g = perfil["borde_grosor"] / 2
             p.drawRoundedRect(r.adjusted(g - 0.5, g - 0.5, 0.5 - g, 0.5 - g), self.radio, self.radio)
-        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        if self.en_edicion():
-            p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(acento(170), 1.5, Qt.DashLine))
-            p.drawRoundedRect(r.adjusted(1, 1, -1, -1), self.radio, self.radio)
-            # Asa de tamaño en la esquina inferior derecha.
-            p.setPen(QPen(tenue(200), 2, Qt.SolidLine, Qt.RoundCap))
-            w, h = self.width(), self.height()
-            for d in (6, 11, 16):
-                p.drawLine(QPointF(w - 5, h - 5 - d), QPointF(w - 5 - d, h - 5))
 
     # Parpadeo del neón: de vez en cuando, una serie corta de apagones como un tubo que falla.
     def tic_parpadeo(self, ahora):
@@ -1641,9 +1680,7 @@ class Tarjeta(QWidget):
     def mouseReleaseEvent(self, e):
         if self._pulsado_titulo is not None:  # un clic en el título: las opciones del widget
             self._pulsado_titulo = None
-            menu = self.app.menu_titulo(self)
-            if menu:
-                menu.exec(self.lb_titulo.mapToGlobal(self.lb_titulo.rect().bottomLeft()))
+            self.app.pulsar_titulo(self, self.lb_titulo.mapToGlobal(self.lb_titulo.rect().bottomLeft()))
             return
         self._t_arrastre.stop()
         self._pendiente = e.globalPosition().toPoint()
@@ -3770,11 +3807,23 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a.setCheckable(True)
                 a.setChecked(self.primer_dia() == dia)
             menu.addSeparator()
-        packs.llamar([p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())], "menu", self, tarjeta, menu)
+        packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
             menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
+
+    def packs_de(self, tarjeta):
+        return [p for p in self.packs if tarjeta.clave in getattr(p, "WIDGETS", ())]
+
+    def pulsar_titulo(self, tarjeta, punto):
+        """Clic en el título: lo que enseñe su pack (gancho `titulo`) o el menú de opciones."""
+        if any(packs.llamar(self.packs_de(tarjeta), "titulo", self, tarjeta, punto)):
+            return
+        menu = self.menu_titulo(tarjeta)
+        if menu:
+            menu.exec(punto)
+
 
     def menu_titulo(self, tarjeta):
         """El menú del título: solo las opciones de ese widget, o None si no tiene."""
@@ -3787,7 +3836,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def marcar_titulos(self):
         """En los widgets con opciones, el título se puede pulsar: manita y una pista al pasar."""
         for t in self.tarjetas:
-            if self.menu_titulo(t):
+            if any(hasattr(p, "titulo") for p in self.packs_de(t)) or self.menu_titulo(t):
                 t.lb_titulo.setCursor(Qt.PointingHandCursor)
                 t.lb_titulo.setToolTip(_("Clic para ver las opciones de este widget"))
 
@@ -4058,7 +4107,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             a["mic_estado"] = bool(mic)
             a["mic"].setVisible(mic is not None)
             poner_icono(a["mic"], "micro_off" if mic else "micro", 10)
-            a["mic"].setStyleSheet(f"color: {COLORES['rojo'].name()};" if mic else "")
+            estilo = f"color: {COLORES['rojo'].name()};" if mic else ""
+            if a["mic"].styleSheet() != estilo:  # cambiar el estilo recalcula el del botón: solo si cambia
+                a["mic"].setStyleSheet(estilo)
             a["mic"].setToolTip(_("Micrófono silenciado · clic para activar") if mic else _("Silenciar micrófono"))
         a["teclado"].setVisible(self.teclado.disponible)
         if self.teclado.disponible:

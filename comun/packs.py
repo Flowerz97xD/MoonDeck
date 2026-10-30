@@ -12,6 +12,8 @@ Un pack_<id>.py puede definir:
     arrancar(app)      tras construir: primeras lecturas y temporizadores
     aplicar(app, s)    con cada lectura de los sensores
     menu(app, tarjeta, menu)        su parte del clic derecho (solo si la tarjeta es suya)
+    titulo(app, tarjeta, punto)     (Windows) el clic en el título de su tarjeta: si enseña algo
+                                    suyo en `punto` devuelve True; si no, sale el menú de opciones
     acciones(app, menu, ...)        su parte del menú general (bandeja)
     ajustes(ventana, cont)          su parte de Configuración > Widgets
     visibles(app, claves)           cuáles de sus tarjetas se ven (para no leer datos de más)
@@ -57,7 +59,7 @@ CATALOGO = tuple(p for p in (
     ("escritorio", "Aplicaciones", "Un lanzador con tus aplicaciones.",
      ("Aplicaciones",), ("lanzador.py",)),
     ("ocio", "Juegos", "Minijuegos para los ratos muertos.",
-     ("Juegos",), ("juegos.py", "dino_sprite.py")),
+     ("Juegos",), ("juegos.py", "minijuegos.py", "dino_sprite.py")),
     ("letras", "Letras", "La letra de lo que suena, sincronizada como en Spotify (también con discos enteros).",
      ("Letras",), ("letras.py",)) if sys.platform == "win32" else None,
     ("mascota", "Mascota", "Una mascota en pixel art que cuidar, que reacciona a lo que pasa en tu PC.",

@@ -4,7 +4,8 @@
   el mismo que usan las teclas multimedia. Ahí se registran Spotify, Chrome, Edge,
   Firefox, el Reproductor multimedia... Va en un hilo con su propio bucle asyncio.
 - Mezclador: las sesiones de audio de Windows vía pycaw (como el mezclador de volumen).
-  Usa COM, así que se llama desde el hilo de la interfaz.
+  Usa COM, así que se llama desde el hilo de la interfaz: por eso cada lectura tiene que ser
+  rápida (si no, se nota un tirón en todo: animaciones, juegos...).
 """
 
 import asyncio
@@ -198,6 +199,19 @@ class Reproductores:
         self._cerrar = True
 
 
+_DISPOSITIVOS = {}  # hilo -> {id -> AudioDevice de pycaw} (los objetos COM no se pasan de un hilo a otro)
+
+
+def _dispositivo(AU, dev):
+    """El AudioDevice de pycaw de un dispositivo, hecho una sola vez: CreateDevice lee todas sus
+    propiedades (~12 ms cada vez), y leerlas cada segundo de cada dispositivo frenaba la interfaz."""
+    ident = dev.GetId()
+    hechos = _DISPOSITIVOS.setdefault(threading.get_ident(), {})
+    if ident not in hechos:
+        hechos[ident] = AU.CreateDevice(dev)
+    return hechos[ident]
+
+
 class Mezclador:
     """Volumen general y por app (sesiones de audio de Windows)."""
 
@@ -210,25 +224,36 @@ class Mezclador:
             self.error = _("Solo disponible en Windows")
             return
         try:
-            from pycaw.pycaw import AudioUtilities
+            from pycaw.pycaw import AudioSession, AudioUtilities, EDataFlow, ERole, IAudioSessionControl2
             self.AU = AudioUtilities
+            self.Sesion, self.IControl2 = AudioSession, IAudioSessionControl2
+            self.salida = (EDataFlow.eRender.value, ERole.eMultimedia.value)
             self.ok = True
         except Exception as e:  # noqa: BLE001
             self.error = _("Mezclador no disponible: {error}").format(error=e)
+
+    def _sesiones_de(self, altavoz):
+        """Las sesiones de audio del altavoz (lo que hace GetAllSessions de pycaw, pero sin volver
+        a crear el dispositivo)."""
+        enumerador = altavoz.AudioSessionManager.GetSessionEnumerator()
+        for i in range(enumerador.GetCount()):
+            ctl = enumerador.GetSession(i)
+            if ctl is not None:
+                yield self.Sesion(ctl.QueryInterface(self.IControl2))
 
     def leer(self):
         """{"dispositivo", "general": (vol, mute), "apps": [(nombre, vol, mute)]} o None."""
         if not self.ok:
             return None
         try:
-            altavoz = self.AU.GetSpeakers()
+            altavoz = _dispositivo(self.AU, self.AU.GetDeviceEnumerator().GetDefaultAudioEndpoint(*self.salida))
             ep = altavoz.EndpointVolume
             self._altavoz = ep
             general = (ep.GetMasterVolumeLevelScalar(), bool(ep.GetMute()))
             dispositivo = altavoz.FriendlyName or _("Altavoces")
 
             grupos = {}
-            for s in self.AU.GetAllSessions():
+            for s in self._sesiones_de(altavoz):
                 proc = s.Process
                 if proc is None or s.State == 2:  # sin proceso (sonidos del sistema) o caducada
                     continue
@@ -241,6 +266,7 @@ class Mezclador:
             self.error = None
             return {"dispositivo": dispositivo, "general": general, "apps": apps}
         except Exception as e:  # noqa: BLE001 - p. ej. se desconectan los auriculares
+            _DISPOSITIVOS.pop(threading.get_ident(), None)  # por si alguno ya no vale
             self.error = _("Error del mezclador: {error}").format(error=e)
             return None
 
@@ -285,11 +311,40 @@ class Dispositivos:
             self.ok = True
         except Exception as e:  # noqa: BLE001
             self.error = _("Dispositivos de audio no disponibles: {error}").format(error=e)
+        # Leer los dispositivos son ~8 ms de llamadas al servicio de audio: con la interfaz
+        # parada ese rato se notaba un tirón cada 2 s (en los juegos, sobre todo). Por eso lo
+        # lee un hilo aparte y leer() da lo último; tras un cambio nuestro, se lee aquí mismo.
+        self._datos = None
+        self._al_dia = False      # False: la próxima lectura, aquí mismo (acabamos de cambiar algo)
+        self._vuelta = 0          # cuenta las lecturas de aquí, para tirar las del hilo que lleguen tarde
+        self._pedir = threading.Event()
+        if self.ok:
+            threading.Thread(target=self._hilo, daemon=True, name="dispositivos").start()
+
+    def _hilo(self):
+        import comtypes
+        comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+        while True:
+            self._pedir.wait()
+            self._pedir.clear()
+            vuelta = self._vuelta
+            datos = self._leer(principal=False)
+            if vuelta == self._vuelta and datos is not None:
+                self._datos = datos
 
     def leer(self):
         """{"salida": [(id, nombre, predeterminado)], "entrada": [...], "mic_silenciado": bool o None}"""
         if not self.ok:
             return None
+        if not self._al_dia or self._datos is None:
+            self._vuelta += 1
+            self._datos = self._leer(principal=True)
+            self._al_dia = True
+        else:
+            self._pedir.set()   # para la próxima vez
+        return self._datos
+
+    def _leer(self, principal):
         try:
             enumerador = self.AU.GetDeviceEnumerator()
             datos = {"mic_silenciado": None}
@@ -299,7 +354,8 @@ class Dispositivos:
                 except Exception:  # noqa: BLE001 - no hay ningún dispositivo de ese tipo
                     pred = None
                 id_pred = pred.GetId() if pred else None
-                activos = self.AU.GetAllDevices(flujo.value, self.Estado.ACTIVE.value)
+                coleccion = enumerador.EnumAudioEndpoints(flujo.value, self.Estado.ACTIVE.value)
+                activos = [_dispositivo(self.AU, coleccion.Item(i)) for i in range(coleccion.GetCount())]
                 datos[clave] = [(d.id, d.FriendlyName or _("Dispositivo"), d.id == id_pred) for d in activos]
             # Windows tiene un micrófono predeterminado por función: sistema,
             # multimedia y comunicaciones (el de Discord, Teams, juegos...). Pueden
@@ -311,12 +367,15 @@ class Dispositivos:
                     mics.setdefault(d.GetId(), d)
                 except Exception:  # noqa: BLE001 - sin micrófono para esa función
                     pass
-            self._mics = [self._volumen(d) for d in mics.values()]
-            if self._mics:
-                datos["mic_silenciado"] = all(bool(m.GetMute()) for m in self._mics)
+            volumenes = [self._volumen(d) for d in mics.values()]
+            if principal:  # los de silenciar_mic (los objetos COM, del hilo de la interfaz)
+                self._mics = volumenes
+            if volumenes:
+                datos["mic_silenciado"] = all(bool(m.GetMute()) for m in volumenes)
             self.error = None
             return datos
         except Exception as e:  # noqa: BLE001
+            _DISPOSITIVOS.pop(threading.get_ident(), None)
             self.error = _("Error leyendo dispositivos: {error}").format(error=e)
             return None
 
@@ -324,7 +383,7 @@ class Dispositivos:
         """El control de volumen (y silencio) de un dispositivo. Las versiones de pycaw
         cambian cómo se saca: primero la cómoda y, si no está, directamente por COM."""
         try:
-            return self.AU.CreateDevice(dispositivo).EndpointVolume
+            return _dispositivo(self.AU, dispositivo).EndpointVolume
         except AttributeError:
             from comtypes import CLSCTX_ALL
             from pycaw.pycaw import IAudioEndpointVolume
@@ -333,6 +392,7 @@ class Dispositivos:
 
     def predeterminar(self, ident):
         """Lo hace predeterminado para todo (multimedia, sistema y comunicaciones)."""
+        self._al_dia = False
         try:
             self.AU.SetDefaultDevice(ident, roles=[self.Rol.eConsole, self.Rol.eMultimedia,
                                                    self.Rol.eCommunications])
@@ -342,6 +402,8 @@ class Dispositivos:
     def silenciar_mic(self, activo):
         """Silencia (o activa) todos los micrófonos predeterminados y lo comprueba.
         Devuelve un texto para el registro."""
+        self._al_dia = False
+        self._leer(principal=True)  # los micrófonos predeterminados de ahora
         try:
             for m in self._mics:
                 m.SetMute(1 if activo else 0, None)

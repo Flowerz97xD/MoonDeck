@@ -694,7 +694,21 @@ def dibujar_mascota(l, x, y, px, especie, colores, expresion="normal", complemen
     """La mascota en (x, y); `px` es el tamaño de un cuadro de 16 x 16 (la mascota mide 16 * px)
     y se dibuja con el doble de detalle, a 32 x 32. expresion: normal, parpadeo, feliz, triste,
     dormido, comiendo. pelaje: None (sus colores), "dorado" (con un brillo que la recorre) o
-    "arcoiris" (franjas de colores que bajan)."""
+    "arcoiris" (franjas de colores que bajan).
+
+    Si el lienzo sabe guardar dibujos (capa), la mascota se dibuja una vez y luego solo se pega:
+    son muchos cuadraditos y dibujarlos en cada frame se notaba (tirones en la mascota y los juegos)."""
+    capa = getattr(l, "capa", None)
+    anima = pelaje in ("dorado", "arcoiris") or any(c in _ANIMADOS for c in complementos)
+    if capa is None or anima:  # lo que cambia con el tiempo, a mano cada vez
+        _pintar_mascota(l, x, y, px, especie, colores, expresion, complementos, sucia, t, pelaje)
+        return
+    clave = ("mascota", especie, tuple(colores), expresion, tuple(complementos), sucia, round(px, 2))
+    capa(clave, x, y, 16 * px + 2, 19 * px + 2,
+         lambda lc: _pintar_mascota(lc, 0, 0, px, especie, colores, expresion, complementos, sucia, t, pelaje))
+
+
+def _pintar_mascota(l, x, y, px, especie, colores, expresion, complementos, sucia, t, pelaje):
     cuerpo, manchas, ojos = (hex_rgb(c) for c in colores)
     if pelaje == "dorado":
         cuerpo, manchas = (1.0, 0.8, 0.25), (0.85, 0.55, 0.1)
@@ -2028,6 +2042,16 @@ class Mascota:
         # La mascota, en el hueco que queda
         zona_y, zona_h = alto_cab + 2, y_fin - alto_cab - 2
         self._escena(l, pal, 0, zona_y, w, zona_h, escala, contexto, t)
+
+    def dibujar_sola(self, l, cx, abajo, lado, expresion="normal"):
+        """Solo la mascota (con lo que lleva puesto), centrada en cx y con los pies en `abajo`:
+        para los minijuegos. Devuelve False si no hay mascota adoptada."""
+        if not self.adoptada:
+            return False
+        px = max(1.0, lado / 16)
+        dibujar_mascota(l, cx - 8 * px, abajo - 16 * px, px, self.d["especie"], self.d["colores"], expresion,
+                        self.d.get("puestos", []), t=time.monotonic(), pelaje=self.d.get("pelaje"))
+        return True
 
     def _escena(self, l, pal, x, y, w, h, escala, contexto, t):
         if h < 30:

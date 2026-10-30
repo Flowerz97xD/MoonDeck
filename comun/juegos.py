@@ -1,4 +1,4 @@
-"""Minijuegos del widget Juegos: Buscaminas, 2048 y el dinosaurio de Chrome.
+"""Minijuegos del widget Juegos: Buscaminas, 2048 y el dinosaurio de Chrome (los demás, en minijuegos.py).
 
 La lógica es la de los originales, pasada a Python:
   - 2048: github.com/gabrielecirulli/2048 (licencia MIT, Copyright (c) 2014 Gabriele Cirulli).
@@ -10,7 +10,7 @@ La lógica es la de los originales, pasada a Python:
 Se dibujan con el mismo lienzo que los relojes (esferas.py), más
     sprite(sx, sy, sw, sh, dx, dy, dw, dh, tinta)   trozo de la hoja del dinosaurio
 y cada versión (Linux / Windows) les pasa el ratón y el teclado:
-    pulsar(x, y, boton) / soltar(x, y, boton) / tecla(nombre, pulsada)
+    pulsar(x, y, boton) / soltar(x, y, boton) / mover(x, y) / tecla(nombre, pulsada)
 con boton 1 (izquierdo), 2 (central) o 3 (derecho) y teclas "izquierda", "derecha",
 "arriba", "abajo", "espacio" o "n". Devuelven True si el juego ha usado el evento
 (si no, el clic derecho abre el menú de la tarjeta).
@@ -23,10 +23,26 @@ import time
 from esferas import con_alfa, mezcla, px_que_quepa
 from idioma import _
 
-JUEGOS = (("buscaminas", "Buscaminas"), ("2048", "2048"), ("dino", "Dinosaurio"))
+JUEGOS = (("buscaminas", "Buscaminas"), ("2048", "2048"), ("dino", "Dinosaurio"), ("atrapa", "Atrapa la comida"),
+          ("serpiente", "Serpiente"), ("pesca", "Pesca"), ("topos", "Topos"), ("masomenos", "Más o menos"),
+          ("faltas", "Faltas"))
 
 # Quien quiera premiar las partidas (la mascota: monedas) pone aquí una función(monedas).
 AL_GANAR = None
+
+_FRAME = [None]
+
+
+def reloj():
+    """La hora para mover las cosas: la del frame que se está dibujando si quien dibuja la sabe
+    (Windows: el momento en que se verá, al refrescar la pantalla, así todo avanza a pasos iguales)
+    o la de ahora. perf_counter: en Windows, time.monotonic va a saltos de ~16 ms."""
+    return _FRAME[0] if _FRAME[0] is not None else time.perf_counter()
+
+
+def poner_frame(t):
+    """La hora del frame que se va a dibujar (None al acabar)."""
+    _FRAME[0] = t
 
 
 def _premiar(monedas):
@@ -36,7 +52,8 @@ def _premiar(monedas):
 
 def crear(nombre, guardado, al_guardar):
     """guardado: dict del juego en la configuración (récords y partida); al_guardar: guarda la config."""
-    clase = {"buscaminas": Buscaminas, "2048": Juego2048, "dino": Dino}.get(nombre, Buscaminas)
+    import minijuegos  # los otros juegos (minijuegos.py importa este módulo)
+    clase = {"buscaminas": Buscaminas, "2048": Juego2048, "dino": Dino, **minijuegos.CLASES}.get(nombre, Buscaminas)
     return clase(guardado, al_guardar)
 
 
@@ -96,6 +113,8 @@ def _mensaje(l, pal, x, y, w, h, titulo, subtitulo=""):
     px = px_que_quepa(l, titulo, w * 0.85, min(h * 0.2, 34), "negrita")
     _, th = l.medir(titulo, px, "negrita")
     chico = max(9.0, min(14.0, h * 0.08))
+    if subtitulo:
+        chico = px_que_quepa(l, subtitulo, w * 0.94, chico, "normal")
     _, sh = l.medir(subtitulo, chico, "normal") if subtitulo else (0, 0)
     arriba = y + (h - th - sh - 4) / 2
     l.texto(titulo, x, arriba, w, th, px, pal["texto"], "negrita")
@@ -176,13 +195,13 @@ class Buscaminas(Juego):
         libres = [(f, c) for f in range(self.filas) for c in range(self.cols) if (f, c) not in prohibidas]
         self.minas = set(random.sample(libres, min(self.n_minas, len(libres))))
         self.estado = "jugando"
-        self.inicio = time.monotonic()
+        self.inicio = reloj()
 
     def _abrir(self, f, c):
         if (f, c) in self.banderas or (f, c) in self.abiertas:
             return
         if (f, c) in self.minas:
-            self.estado, self.explotada, self.fin = "perdido", (f, c), time.monotonic()
+            self.estado, self.explotada, self.fin = "perdido", (f, c), reloj()
             return
         pendientes = [(f, c)]
         while pendientes:  # los huecos (0) abren a sus vecinos en cadena
@@ -196,7 +215,7 @@ class Buscaminas(Juego):
             self._ganar()
 
     def _ganar(self):
-        self.estado, self.fin = "ganado", time.monotonic()
+        self.estado, self.fin = "ganado", reloj()
         _premiar(3 + len(self.minas) // 10)
         self.banderas = set(self.minas)
         segundos = round(self.fin - self.inicio)
@@ -271,7 +290,7 @@ class Buscaminas(Juego):
         l.rect(w / 2 - 22, 2, 44, self.HUD - 4, 6, con_alfa(pal["tenue"], 0.12))
         l.texto(cara, w / 2 - 22, 2, 44, self.HUD - 4, px, pal["texto"], "negrita")
         if self.estado == "jugando":
-            segundos = int(time.monotonic() - self.inicio)
+            segundos = int(reloj() - self.inicio)
         elif self.estado in ("ganado", "perdido"):
             segundos = int(self.fin - self.inicio)
         else:
@@ -378,7 +397,7 @@ class Juego2048(Juego):
         self.ganado = self.seguir = self.terminado = False
         self._ficha_al_azar()
         self._ficha_al_azar()
-        self.t_mov = time.monotonic()
+        self.t_mov = reloj()
         self._guardar()
 
     def _guardar(self):
@@ -462,12 +481,12 @@ class Juego2048(Juego):
             self.terminado = not self._quedan_movimientos()
             if self.terminado:
                 _premiar(min(30, self.puntos // 400))
-            self.t_mov = time.monotonic()
+            self.t_mov = reloj()
             self._guardar()
         return movido
 
     def siguiente_frame(self):
-        return 16 if time.monotonic() - self.t_mov < self.DESLIZAR + self.APARECER else None
+        return 16 if reloj() - self.t_mov < self.DESLIZAR + self.APARECER else None
 
     def tecla(self, nombre, pulsada):
         if not pulsada:
@@ -530,7 +549,7 @@ class Juego2048(Juego):
             for c in range(self.TAM):
                 x, y = pos(f, c)
                 l.rect(x, y, celda, celda, max(3.0, celda * 0.06), con_alfa(pal["tenue"], 0.07))
-        t = time.monotonic() - self.t_mov
+        t = reloj() - self.t_mov
         deslizar = min(1.0, t / self.DESLIZAR)
         aparecer = min(1.0, max(0.0, t - self.DESLIZAR) / self.APARECER)
         for fila in self.celdas:
@@ -687,7 +706,7 @@ class Dino(Juego):
     def _saltar(self):
         r = self.rex
         if self.estado == "chocado":
-            if time.monotonic() - self.t_choque >= CONFIG["GAMEOVER_CLEAR_TIME"] / 1000:
+            if reloj() - self.t_choque >= CONFIG["GAMEOVER_CLEAR_TIME"] / 1000:
                 self.nueva()
                 self._saltar()
             return
@@ -747,7 +766,7 @@ class Dino(Juego):
 
     # --- simulación (Runner.update de Chromium)
     def _actualizar(self):
-        ahora = time.monotonic()
+        ahora = reloj()
         dt = 0.0 if self.ultimo is None else (ahora - self.ultimo) * 1000
         self.ultimo = ahora
         dt = min(dt, 50.0)  # si la ventana estuvo oculta, sin teletransportes
@@ -774,7 +793,7 @@ class Dino(Juego):
             if self.obstaculos and self._choque(self.obstaculos[0]):
                 self.estado = "chocado"
                 self._poner_estado("CRASHED")
-                self.t_choque = time.monotonic()
+                self.t_choque = reloj()
                 _premiar(min(20, self.puntos() // 100))
                 if self.puntos() > self.record():
                     self.guardado["record"] = self.puntos()
