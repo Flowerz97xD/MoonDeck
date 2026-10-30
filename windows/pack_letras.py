@@ -90,10 +90,10 @@ class VistaLetra(QWidget):
                 actual = i
             if actual != self.actual:
                 self.anterior, self.actual = self.actual, actual
-                self._desde, self._inicio, self.avance = self.desplazado, time.monotonic(), 0.0
+                self._desde, self._inicio, self.avance = self.desplazado, time.perf_counter(), 0.0
             self._medir()
             if self.avance < 1:
-                self.avance = min(1.0, (time.monotonic() - self._inicio) / self.DURACION)
+                self.avance = min(1.0, (time.perf_counter() - self._inicio) / self.DURACION)
                 t = self.avance
                 suave = 4 * t ** 3 if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2  # acelera y frena
                 self.desplazado = self._desde + (self._objetivo() - self._desde) * suave

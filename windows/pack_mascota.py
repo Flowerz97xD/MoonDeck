@@ -27,9 +27,20 @@ class VistaMascota(QWidget):
         self.app = app
         self.setMinimumHeight(120)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setMouseTracking(True)  # para la mano al pasar por encima de la mascota
+        self._acariciando = None    # dónde iba el ratón en la última caricia (botón pulsado)
         self.timer = QTimer(self, interval=100)
-        self.timer.timeout.connect(self.update)
+        self.timer.timeout.connect(self._tic)
+
+    def _tic(self):
+        # Mientras se juega en la misma ventana, a la mitad (5 por segundo): dibujarla cuesta y le
+        # quita tiempo a los frames del juego
+        juego = getattr(self.app, "juego_vista", None)
+        if juego and hasattr(juego, "animando") and juego.animando() and juego.window() is self.window():
+            self._tics = getattr(self, "_tics", 0) + 1
+            if self._tics % 2:
+                return
+        self.update()
 
     def sizeHint(self):
         return QSize(M.ANCHO - 32, 260)
@@ -56,6 +67,13 @@ class VistaMascota(QWidget):
             e.ignore()
             return
         accion = self.app.mascota.pulsar(e.position().x(), e.position().y())
+        if accion is None and self.app.mascota.en_mascota(e.position().x(), e.position().y()):
+            # Una caricia (y si arrastra por encima, más): no mueve la ventana
+            self._acariciando = e.position()
+            self.app.mascota.acariciar()
+            self.setCursor(Qt.ClosedHandCursor)
+            self.update()
+            return
         if accion == "adoptar":
             personalizar_mascota(self.app, self.window())
         elif accion == "tienda":
@@ -63,6 +81,25 @@ class VistaMascota(QWidget):
         elif accion is None:
             e.ignore()
         self.update()
+
+    def mouseMoveEvent(self, e):
+        m, x, y = self.app.mascota, e.position().x(), e.position().y()
+        if self._acariciando is not None and e.buttons() & Qt.LeftButton:
+            # Acariciar es pasar la mano por encima: una caricia por cada trocito de recorrido
+            if m.en_mascota(x, y) and (e.position() - self._acariciando).manhattanLength() > 18:
+                self._acariciando = e.position()
+                m.acariciar()
+            return
+        sobre_boton = any(bx <= x <= bx + bw and by <= y <= by + bh for bx, by, bw, bh, _a in m.botones)
+        self.setCursor(Qt.PointingHandCursor if sobre_boton else
+                       Qt.OpenHandCursor if m.en_mascota(x, y) else Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, e):
+        if self._acariciando is None:
+            e.ignore()
+            return
+        self._acariciando = None
+        self.setCursor(Qt.OpenHandCursor)
 
 
 class LienzoMascota(QWidget):
@@ -491,7 +528,9 @@ def construir(self, s):
     self.mascota_letras = letras.Letras()
     try:  # las partidas ganadas dan monedas (si está el pack Juegos)
         import juegos
+        import minijuegos
         juegos.AL_GANAR = self.mascota.anadir_monedas
+        minijuegos.DIBUJAR_MASCOTA = self.mascota.dibujar_sola  # en Atrapa la comida juega ella
     except ImportError:
         pass
     c = self.tarjeta("mascota", "Mascota")
@@ -511,7 +550,31 @@ def aplicar(self, s):
     # Sin juegos, el medidor de FPS mide el navegador o el reproductor (un vídeo también pinta
     # fotogramas): eso no es jugar, es ver un vídeo
     fps = s.get("fps")
-    self.mascota_contexto["jugando"] = bool(fps) and fps["app"].lower() not in MedidorFPS.ESCRITORIO
+    self.mascota_contexto["jugando"] = jugando(fps)
+
+
+# Además de las de MedidorFPS.ESCRITORIO: también pintan fotogramas y no son juegos
+NO_JUEGOS = {"python.exe", "pythonw.exe", "moondeck.exe", "claude.exe", "steelseriesgg.exe", "radeonsoftware.exe",
+             "amdrsserv.exe", "nvidia overlay.exe", "wallpaper32.exe", "wallpaper64.exe", "lively.exe"}
+
+
+def jugando(fps):
+    """¿Hay un juego delante? Lo que presenta fotogramas tiene que ser la ventana que tienes
+    delante: si no, cualquier app animada de fondo (la de Claude, el software de la gráfica...)
+    contaba como un juego y la mascota sacaba el mando con Spotify abierto."""
+    if not fps:
+        return False
+    app = fps["app"].lower()
+    if app in MedidorFPS.ESCRITORIO or app in NO_JUEGOS:
+        return False
+    try:
+        import psutil
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        pid = ctypes.c_ulong()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return psutil.Process(pid.value).name().lower() == app
+    except Exception:  # noqa: BLE001 - el proceso se ha cerrado justo ahora
+        return False
 
 
 def menu(self, tarjeta, menu):
