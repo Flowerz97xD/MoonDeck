@@ -181,7 +181,8 @@ class SelectorJuegos:
         w, h = ficha.get_allocated_width(), ficha.get_allocated_height()
         if clave == self.vista.juego.nombre:  # el que está puesto: con un borde
             l.rect(0, 0, w, h, 10, pal["azul"])
-            l.rect(2, 2, w - 4, h - 4, 8, (0.97, 0.97, 0.98) if tema_claro() else (0.11, 0.12, 0.15))
+        # Fondo propio en todas: los colores van con el tema de MoonDeck, el menú con el del sistema
+        l.rect(2, 2, w - 4, h - 4, 8, (0.97, 0.97, 0.98) if tema_claro() else (0.11, 0.12, 0.15))
         l.rect(2, 2, w - 4, h - 4, 8, con_alfa(pal["tenue"], 0.06))
         icono = w * 0.5
         minijuegos.dibujar_icono(clave, l, (w - icono) / 2, 8, icono, pal)
